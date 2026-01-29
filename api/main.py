@@ -60,41 +60,32 @@ async def chat_endpoint(request: ChatRequest):
             
             start_time = time.time()
             
-            # 1. Retrieve Documents (Blocking I/O wrapped in thread)
-            # We can't easily parallelize routing here if we want to stream immediately, 
-            # but routing is fast. Let's do retrieval first.
-            context_docs = await asyncio.to_thread(retriever.retrieve, query)
+            # 1. Parallelize Classification and Retrieval
+            # We run both tasks concurrently to save time
+            
+            # Task 1: Retrieval (Blocking I/O wrapped in thread)
+            retrieval_task = asyncio.create_task(asyncio.to_thread(retriever.retrieve, query))
+            
+            # Task 2: Classification (Network call, usually fast but better parallel)
+            # Since generator.classify_query is sync, we wrap it too
+            classification_task = asyncio.create_task(asyncio.to_thread(generator.classify_query, query))
+            
+            # Wait for both
+            context_docs, classified_category = await asyncio.gather(retrieval_task, classification_task)
+            
+            # Use the classified category if request was "auto"
+            final_category = classified_category if category == "auto" else category
+            print(f"Auto-routed category: {final_category} (Original: {category})")
             
             retrieval_end_time = time.time()
-            print(f"[Timing] Retrieval took: {retrieval_end_time - start_time:.4f}s")
+            print(f"[Timing] Retrieval & Classification took: {retrieval_end_time - start_time:.4f}s")
             
             # 2. Generate Stream
-            # We need to pass the generator to iterate over
-            # Since generate_answer_stream is synchronous generator, we iterate it
-            # If we want async streaming, we might need to wrap it or use run_in_executor for each chunk?
-            # Actually, for simple text streaming, iterating a sync generator in async function 
-            # might block the loop if chunks take time. 
-            # But here the generator yields quickly after network calls.
-            # Ideally `generate_answer_stream` should be async or we run it in thread.
-            # But `google.genai` stream might be sync.
-            # Let's assume it's sync for now and just iterate.
-            # To avoid blocking, we can use `asyncio.to_thread` for the whole generation 
-            # but that defeats streaming purpose if we wait for all.
-            # We need an async iterator wrapper if the underlying lib is sync blocking.
-            
-            # However, `generator.generate_answer_stream` calls `client.models.generate_content_stream`
-            # which returns an iterable.
-            
-            # Let's try to iterate directly. If it blocks, it blocks this request processing.
-            # For better concurrency, we should run the blocking generation in a thread 
-            # and push to a queue, but that's complex.
-            # Let's stick to direct iteration for MVP.
-            
-            stream = generator.generate_answer_stream(query, context_docs, category)
+            stream = generator.generate_answer_stream(query, context_docs, final_category)
             
             for chunk in stream:
                 yield chunk
-                # await asyncio.sleep(0) # Yield control to event loop
+                await asyncio.sleep(0) # Yield control to event loop
             
             # 3. Send Sources
             sources = []
@@ -108,8 +99,10 @@ async def chat_endpoint(request: ChatRequest):
                             metadata = {}
                     
                     try:
-                        if metadata and isinstance(metadata, dict) and 'source' in metadata:
-                            sources.append(metadata['source'])
+                        if metadata and isinstance(metadata, dict):
+                            # Append the whole metadata object or a subset
+                            # We need 'source' for the URL and 'title' for display
+                            sources.append(metadata)
                     except Exception as e:
                         print(f"[Warning] Failed to extract source from doc {i}: {e}")
 

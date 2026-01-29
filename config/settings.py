@@ -19,7 +19,7 @@ EMBEDDING_MODEL = "models/text-embedding-004"
 GENERATION_MODEL = "gemini-2.5-flash" # Updated as per user request
 
 # RAG Configuration
-SIMILARITY_THRESHOLD = 0.6
+SIMILARITY_THRESHOLD = 0.35
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
 

@@ -317,16 +317,26 @@
 
             // Extract YouTube Videos
             if (sources && sources.length > 0) {
-                sources.forEach(source => {
-                    if (source.includes('youtube.com') || source.includes('youtu.be')) {
+                sources.forEach(item => {
+                    let url = "";
+                    let title = "관련 추천 영상";
+
+                    if (typeof item === 'string') {
+                        url = item;
+                    } else if (typeof item === 'object' && item !== null) {
+                        url = item.source || "";
+                        if (item.title) title = item.title;
+                    }
+
+                    if (url && (url.includes('youtube.com') || url.includes('youtu.be'))) {
                         // Extract ID
                         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-                        const match = source.match(regExp);
+                        const match = url.match(regExp);
                         if (match && match[2].length === 11) {
                             videos.push({
                                 id: match[2],
-                                url: source,
-                                title: "관련 추천 영상", // We might not have title here unless we pass it from backend
+                                url: url,
+                                title: title, 
                                 author: "서울온케어의원"
                             });
                         }
