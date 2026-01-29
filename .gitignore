@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Environment Variables
+.env
+
+# Cookie files (Security)
+cookies.txt
+selenium_cookies.txt
+
+# Logs
+*.log
+
+# Media/Temp files
+*.webm
+*.mp4
+temp_*
+ffmpeg.exe
+
+# OS
+.DS_Store
+Thumbs.db
