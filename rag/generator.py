@@ -47,6 +47,9 @@ class Generator:
         당신은 서울온케어의원의 **상담 실장 온케어봇**입니다.
         환자분들을 따뜻하고 친절하게 맞이하고, 병원 이용에 대한 기본적인 안내를 도와드립니다.
         
+        [Previous Conversation]:
+        {history}
+
         [질문]:
         {question}
         
@@ -64,6 +67,9 @@ class Generator:
         
         환자(사용자)의 질문에 대해 아래 [Context]를 바탕으로 친절하고 전문적으로 답변해 주세요.
         
+        [Previous Conversation]:
+        {history}
+
         [Context]:
         {context}
         
@@ -80,6 +86,16 @@ class Generator:
         **법적 고지 (답변 하단에 필수 포함)**:
         "본 상담 내용은 참고용이며, 의학적 진단이나 처방을 대신할 수 없습니다."
         """
+
+    def _format_history(self, history: List[Dict]) -> str:
+        if not history:
+            return "없음"
+        formatted = []
+        for turn in history[-5:]: # Keep last 5 turns
+            role = "User" if turn.get("role") == "user" else "Assistant"
+            content = turn.get("content", "")
+            formatted.append(f"{role}: {content}")
+        return "\n".join(formatted)
 
     def classify_query(self, query: str) -> str:
         """Classifies the query into 'cancer', 'nerve', or 'general'."""
@@ -99,18 +115,20 @@ class Generator:
             print(f"Router Error: {e}")
             return "general"
 
-    def generate_answer(self, query: str, context_docs: List[Dict], category: str = "auto") -> str:
+    def generate_answer(self, query: str, context_docs: List[Dict], category: str = "auto", history: List[Dict] = []) -> str:
         # 1. Auto-Routing
         if category == "auto":
             category = self.classify_query(query)
             print(f"Auto-routed category: {category}")
+
+        history_text = self._format_history(history)
 
         # 2. Handle General Queries (Consultation Manager)
         if category == "general":
             try:
                 response = self.client.models.generate_content(
                     model=self.model,
-                    contents=self.general_prompt_template.format(question=query),
+                    contents=self.general_prompt_template.format(question=query, history=history_text),
                     config=genai.types.GenerateContentConfig(
                         temperature=0.7
                     )
@@ -143,7 +161,8 @@ class Generator:
         prompt = self.medical_prompt_template.format(
             category_name=category_name,
             context=formatted_context,
-            question=query
+            question=query,
+            history=history_text
         )
         
         # Generate
@@ -167,18 +186,21 @@ class Generator:
         
         return final_response
 
-    def generate_answer_stream(self, query: str, context_docs: List[Dict], category: str = "auto"):
+    def generate_answer_stream(self, query: str, context_docs: List[Dict], category: str = "auto", history: List[Dict] = [], **kwargs):
+        print(f"DEBUG: generate_answer_stream called. History len: {len(history)}")
         # 1. Auto-Routing
         if category == "auto":
             category = self.classify_query(query)
             print(f"Auto-routed category: {category}")
+
+        history_text = self._format_history(history)
 
         # 2. Handle General Queries (Consultation Manager)
         if category == "general":
             try:
                 response = self.client.models.generate_content_stream(
                     model=self.model,
-                    contents=self.general_prompt_template.format(question=query),
+                    contents=self.general_prompt_template.format(question=query, history=history_text),
                     config=genai.types.GenerateContentConfig(
                         temperature=0.7
                     )
@@ -214,7 +236,8 @@ class Generator:
         prompt = self.medical_prompt_template.format(
             category_name=category_name,
             context=formatted_context,
-            question=query
+            question=query,
+            history=history_text
         )
         
         # Generate
