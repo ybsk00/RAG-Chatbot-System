@@ -11,10 +11,55 @@ class Generator:
         self.client = genai.Client(api_key=GOOGLE_API_KEY)
         self.model = GENERATION_MODEL
         
-        # We handle the prompt construction in the method now, 
-        # but we can keep the template string here for reference or usage.
-        self.base_prompt_template = """
-        당신은 서울온케어의원의 **AI 상담 전문의**입니다.
+        # 1. Router Prompt
+        self.router_prompt = """
+        당신은 사용자의 질문을 분석하여 가장 적절한 카테고리로 분류하는 AI입니다.
+        
+        [카테고리 정의]
+        1. **cancer**: 암, 항암 치료, 면역 치료, 암 식단, 고주파 온열 치료 등 암과 관련된 모든 의학적 질문.
+        2. **nerve**: 자율신경, 신경 주사, 어지러움, 두통, 실신, 기립성 빈맥 등 자율신경계와 관련된 모든 의학적 질문.
+        3. **general**: 인사, 병원 위치 문의, 진료 시간, 비용 문의, 날씨, 일상적인 대화 등 의학적 전문 지식이 필요 없는 질문.
+        
+        사용자의 질문이 입력되면, 위 3가지 카테고리 중 하나를 선택하여 단어 하나만 출력하세요. (예: cancer)
+        
+        [예시]
+        Q: 암 환자가 먹으면 좋은 음식은?
+        A: cancer
+        
+        Q: 자율신경 실조증 치료 방법 알려줘
+        A: nerve
+        
+        Q: 진료 시간이 언제인가요?
+        A: general
+        
+        Q: 고주파 온열 치료 효과가 뭐야?
+        A: cancer
+        
+        Q: 기립성 빈맥 증후군이 뭐야?
+        A: nerve
+        
+        [질문]: {question}
+        [분류]:
+        """
+
+        # 2. Consultation Manager Persona (General)
+        self.general_prompt_template = """
+        당신은 서울온케어의원의 **상담 실장 온케어봇**입니다.
+        환자분들을 따뜻하고 친절하게 맞이하고, 병원 이용에 대한 기본적인 안내를 도와드립니다.
+        
+        [질문]:
+        {question}
+        
+        **가이드라인**:
+        1. **친절함**: 항상 밝고 정중한 태도로 응대하세요.
+        2. **역할 제한**: 의학적인 상담이나 진단은 하지 않습니다. 의학적인 질문이 들어오면 "죄송하지만, 그 부분은 원장님 진료 시 자세히 상담받으실 수 있습니다."라고 안내하세요.
+        3. **병원 안내**: 진료 시간, 위치 등은 알고 있는 범위 내에서 안내하되, 모르는 내용은 "병원으로 전화 주시면 친절히 안내해 드리겠습니다."라고 답변하세요.
+        4. **간결함**: 답변은 너무 길지 않게 핵심만 전달하세요.
+        """
+
+        # 3. Medical Doctor Persona (RAG)
+        self.medical_prompt_template = """
+        당신은 서울온케어의원의 **AI 상담 전문의 온케어봇**입니다.
         현재 상담 주제는 **{category_name}**입니다.
         
         환자(사용자)의 질문에 대해 아래 [Context]를 바탕으로 친절하고 전문적으로 답변해 주세요.
@@ -35,7 +80,45 @@ class Generator:
         "본 상담 내용은 참고용이며, 의학적 진단이나 처방을 대신할 수 없습니다."
         """
 
-    def generate_answer(self, query: str, context_docs: List[Dict], category: str = "cancer") -> str:
+    def _classify_query(self, query: str) -> str:
+        """Classifies the query into 'cancer', 'nerve', or 'general'."""
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=self.router_prompt.format(question=query),
+                config=genai.types.GenerateContentConfig(
+                    temperature=0.0
+                )
+            )
+            category = response.text.strip().lower()
+            if category not in ["cancer", "nerve", "general"]:
+                return "general" # Default fallback
+            return category
+        except Exception as e:
+            print(f"Router Error: {e}")
+            return "general"
+
+    def generate_answer(self, query: str, context_docs: List[Dict], category: str = "auto") -> str:
+        # 1. Auto-Routing
+        if category == "auto":
+            category = self._classify_query(query)
+            print(f"Auto-routed category: {category}")
+
+        # 2. Handle General Queries (Consultation Manager)
+        if category == "general":
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=self.general_prompt_template.format(question=query),
+                    config=genai.types.GenerateContentConfig(
+                        temperature=0.7
+                    )
+                )
+                return response.text
+            except Exception as e:
+                return f"죄송합니다. 답변을 생성하는 도중 오류가 발생했습니다. (Error: {str(e)})"
+
+        # 3. Handle Medical Queries (RAG Agent)
         # Map category code to name
         category_map = {
             "cancer": "암 보조 치료 (Cancer Support Treatment)",
@@ -43,25 +126,26 @@ class Generator:
         }
         category_name = category_map.get(category, "일반 상담")
 
-        # 1. Safety Check: Diagnosis
+        # Safety Check: Diagnosis
         if SafetyGuard.check_medical_query(query):
             pass 
 
-        # 2. Safety Check: Relevance
+        # Safety Check: Relevance
         if not SafetyGuard.check_relevance(context_docs):
+            # If RAG fails but it was routed as medical, maybe fallback to general or say I don't know
             return SafetyGuard.get_no_info_response()
 
-        # 3. Format Context
+        # Format Context
         formatted_context = "\n\n".join([doc['content'] for doc in context_docs])
         
-        # 4. Construct Prompt
-        prompt = self.base_prompt_template.format(
+        # Construct Prompt
+        prompt = self.medical_prompt_template.format(
             category_name=category_name,
             context=formatted_context,
             question=query
         )
         
-        # 5. Generate
+        # Generate
         try:
             response_obj = self.client.models.generate_content(
                 model=self.model,
@@ -74,7 +158,7 @@ class Generator:
         except Exception as e:
             return f"죄송합니다. 답변을 생성하는 도중 오류가 발생했습니다. (Error: {str(e)})"
         
-        # 6. Append Disclaimer
+        # Append Disclaimer
         if "본 상담 내용은 참고용이며" not in response:
             final_response = SafetyGuard.append_disclaimer(response)
         else:

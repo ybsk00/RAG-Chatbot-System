@@ -27,7 +27,7 @@ except Exception as e:
 
 class ChatRequest(BaseModel):
     query: str
-    category: str = "cancer" # cancer or nerve
+    category: str = "auto" # auto, cancer, nerve, general
 
 class ChatResponse(BaseModel):
     answer: str

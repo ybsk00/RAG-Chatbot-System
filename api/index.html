@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title>Seoul On Care - AI Assistant</title>
+    <title>서울온케어의원 상담실</title>
     <link
         href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&amp;family=Noto+Sans:wght@400;500;700&amp;display=swap"
         rel="stylesheet" />
@@ -60,19 +60,11 @@
         <div
             class="flex h-[90vh] w-full max-w-[1400px] flex-col overflow-hidden rounded-xl bg-[#fcfaf8] shadow-2xl dark:bg-[#1c140d] ring-1 ring-black/5">
 
-            <!-- Modal Header / Tabs -->
+            <!-- Modal Header -->
             <div
                 class="flex items-center justify-between border-b border-[#e8dbce] bg-white dark:bg-[#221910] dark:border-[#33251a] px-6 py-0 shrink-0 h-16">
-                <div class="flex h-full gap-8">
-                    <button id="tab-cancer" onclick="switchTab('cancer')"
-                        class="relative flex h-full items-center justify-center border-b-[3px] border-b-primary text-[#1c140d] dark:text-white px-2 transition-colors hover:bg-gray-50 dark:hover:bg-[#2a2016]">
-                        <span class="text-sm font-bold leading-normal tracking-[0.015em]">암보조치료 (Cancer Support)</span>
-                    </button>
-                    <button id="tab-nerve" onclick="switchTab('nerve')"
-                        class="relative flex h-full items-center justify-center border-b-[3px] border-b-transparent text-[#9c7349] dark:text-[#bcaaa4] px-2 transition-colors hover:text-primary dark:hover:text-primary hover:bg-gray-50 dark:hover:bg-[#2a2016]">
-                        <span class="text-sm font-bold leading-normal tracking-[0.015em]">자율신경치료 (Autonomic
-                            Nerve)</span>
-                    </button>
+                <div class="flex h-full gap-8 items-center">
+                   <span class="text-lg font-bold text-[#1c140d] dark:text-white">서울온케어의원 상담실</span>
                 </div>
                 <button
                     class="flex h-8 w-8 items-center justify-center rounded-full text-[#9c7349] hover:bg-[#f4ede7] hover:text-[#1c140d] dark:text-[#bcaaa4] dark:hover:bg-[#33251a] dark:hover:text-white transition-colors">
@@ -97,7 +89,7 @@
                             <!-- Headline/Welcome -->
                             <h2
                                 class="text-[#1c140d] dark:text-white text-2xl font-bold leading-tight text-center px-4 pt-4">
-                                서울온케어의원 AI 상담실</h2>
+                                서울온케어의원 상담실</h2>
 
                             <!-- Initial AI Message -->
                             <div class="flex items-end gap-3 px-2">
@@ -107,12 +99,12 @@
                                 <div class="flex flex-1 flex-col gap-1 items-start">
                                     <p
                                         class="text-[#9c7349] dark:text-[#bcaaa4] text-[13px] font-normal leading-normal pl-1">
-                                        Dr. AI</p>
+                                        온케어봇</p>
                                     <div
                                         class="rounded-2xl rounded-tl-none bg-white border border-[#e8dbce] px-5 py-3 text-[#1c140d] shadow-sm dark:bg-[#2a2016] dark:border-[#33251a] dark:text-white max-w-[85%]">
                                         <p class="text-base font-normal leading-relaxed">
-                                            안녕하세요. 서울온케어의원 AI 상담전문의입니다.<br>
-                                            암 보조 치료나 자율신경 치료에 대해 궁금한 점이 있으신가요? 편안하게 말씀해 주세요.
+                                            안녕하세요. 서울온케어의원 상담전문의 온케어봇입니다.<br>
+                                            무엇이든 물어보시면 친절하게 답변해 드리겠습니다.
                                         </p>
                                     </div>
                                 </div>
@@ -175,32 +167,7 @@
     </div>
 
     <script>
-        let currentCategory = 'cancer'; // Default category
 
-        function switchTab(category) {
-            currentCategory = category;
-
-            // Update Tab Styles
-            const tabCancer = document.getElementById('tab-cancer');
-            const tabNerve = document.getElementById('tab-nerve');
-
-            if (category === 'cancer') {
-                tabCancer.classList.add('border-b-primary', 'text-[#1c140d]', 'dark:text-white');
-                tabCancer.classList.remove('border-b-transparent', 'text-[#9c7349]', 'dark:text-[#bcaaa4]');
-
-                tabNerve.classList.remove('border-b-primary', 'text-[#1c140d]', 'dark:text-white');
-                tabNerve.classList.add('border-b-transparent', 'text-[#9c7349]', 'dark:text-[#bcaaa4]');
-            } else {
-                tabNerve.classList.add('border-b-primary', 'text-[#1c140d]', 'dark:text-white');
-                tabNerve.classList.remove('border-b-transparent', 'text-[#9c7349]', 'dark:text-[#bcaaa4]');
-
-                tabCancer.classList.remove('border-b-primary', 'text-[#1c140d]', 'dark:text-white');
-                tabCancer.classList.add('border-b-transparent', 'text-[#9c7349]', 'dark:text-[#bcaaa4]');
-            }
-
-            // Optional: Clear chat or show system message indicating switch
-            addSystemMessage(`'${category === 'cancer' ? '암보조치료' : '자율신경치료'}' 상담 모드로 전환되었습니다.`);
-        }
 
         async function sendMessage() {
             const input = document.getElementById('userInput');
@@ -221,7 +188,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         query: query,
-                        category: currentCategory
+                        query: query,
+                        category: "auto"
                     })
                 });
 
@@ -267,7 +235,7 @@
 <div class="flex items-end gap-3 px-2">
     <div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full w-10 shrink-0 border border-gray-200 dark:border-gray-700" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuC-g9ytL4eiKM2FOpV_1_gUslXLFwlL8Je31H90b5t7-F011XIcIvf9Uijc0yPLVIGVvT4OQEdAu4BCrRQesABH9wa7h2u0CPTt7sFxdlSfLtBg_A0UgSQr1S4N6E3RhBfkRc0pgC40dBrVvt6pISzSSRm_yxZWVShabl6W4zA6JJmC6MLgEJMdvXwLUruipva0wJhjYLcRqeEW4XMTGnDa4oHeJQPvPCPYxRStygYcBNsqnvfYgRhPja7z5O2UsUhYT9jfbPKLSLQM");'></div>
     <div class="flex flex-1 flex-col gap-1 items-start">
-        <p class="text-[#9c7349] dark:text-[#bcaaa4] text-[13px] font-normal leading-normal pl-1">Dr. AI</p>
+        <p class="text-[#9c7349] dark:text-[#bcaaa4] text-[13px] font-normal leading-normal pl-1">온케어봇</p>
         <div class="rounded-2xl rounded-tl-none bg-white border border-[#e8dbce] px-5 py-3 text-[#1c140d] shadow-sm dark:bg-[#2a2016] dark:border-[#33251a] dark:text-white max-w-[85%]">
             <p class="text-base font-normal leading-relaxed">${formattedText}</p>
         </div>
