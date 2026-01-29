@@ -28,6 +28,7 @@ except Exception as e:
 class ChatRequest(BaseModel):
     query: str
     category: str = "auto" # auto, cancer, nerve, general
+    history: list = [] # List of {"role": "user"|"model", "content": "..."}
 
 class ChatResponse(BaseModel):
     answer: str
@@ -51,7 +52,8 @@ async def chat_endpoint(request: ChatRequest):
     
     query = request.query
     category = request.category
-    print(f"Received query: {query}, Category: {category}")
+    history = request.history
+    print(f"Received query: {query}, Category: {category}, History length: {len(history)}")
     
     async def response_generator():
         try:
@@ -81,7 +83,7 @@ async def chat_endpoint(request: ChatRequest):
             print(f"[Timing] Retrieval & Classification took: {retrieval_end_time - start_time:.4f}s")
             
             # 2. Generate Stream
-            stream = generator.generate_answer_stream(query, context_docs, final_category)
+            stream = generator.generate_answer_stream(query, context_docs, final_category, history)
             
             for chunk in stream:
                 yield chunk
