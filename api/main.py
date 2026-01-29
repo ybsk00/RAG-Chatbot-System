@@ -49,15 +49,30 @@ async def chat_endpoint(request: ChatRequest):
     print(f"Received query: {query}, Category: {category}")
     
     try:
-        # 1. Retrieve
-        # We could filter by category here if we had metadata, but for now we pass it to generator context
-        context_docs = retriever.retrieve(query)
+        import asyncio
+        
+        # 1. Parallelize Retrieval and Routing
+        tasks = []
+        
+        # Task 1: Retrieve Documents (Blocking I/O wrapped in thread)
+        tasks.append(asyncio.to_thread(retriever.retrieve, query))
+        
+        # Task 2: Classify Query (Blocking I/O wrapped in thread) - Only if auto
+        if category == "auto":
+            tasks.append(asyncio.to_thread(generator.classify_query, query))
+        
+        # Execute tasks concurrently
+        results = await asyncio.gather(*tasks)
+        
+        context_docs = results[0]
+        if category == "auto":
+            category = results[1]
+            print(f"Auto-routed category (Parallel): {category}")
         
         # 2. Generate with Category Context
-        answer = generator.generate_answer(query, context_docs, category)
+        answer = await asyncio.to_thread(generator.generate_answer, query, context_docs, category)
         
-        # Extract sources for API response (optional, as they are in text too)
-        # Extract sources for API response (optional, as they are in text too)
+        # Extract sources for API response
         sources = []
         if context_docs:
             for doc in context_docs:

@@ -54,7 +54,7 @@ class Generator:
         1. **친절함**: 항상 밝고 정중한 태도로 응대하세요.
         2. **역할 제한**: 의학적인 상담이나 진단은 하지 않습니다. 의학적인 질문이 들어오면 "죄송하지만, 그 부분은 원장님 진료 시 자세히 상담받으실 수 있습니다."라고 안내하세요.
         3. **병원 안내**: 진료 시간, 위치 등은 알고 있는 범위 내에서 안내하되, 모르는 내용은 "병원으로 전화 주시면 친절히 안내해 드리겠습니다."라고 답변하세요.
-        4. **간결함**: 답변은 너무 길지 않게 핵심만 전달하세요.
+        4. **간결함**: 답변은 공백 포함 300자 이내로 핵심만 전달하세요.
         """
 
         # 3. Medical Doctor Persona (RAG)
@@ -75,12 +75,13 @@ class Generator:
         2. **안전장치**: "진단", "처방", "약물 추천" 등의 요청에는 "구체적인 진단과 처방은 내원하시어 전문의와 상담이 필요합니다"라는 취지로 안내하세요.
         3. **근거 기반**: 제공된 Context에 없는 내용은 지어내지 마세요. 모르는 내용은 솔직히 모른다고 하거나 병원 문의를 유도하세요.
         4. **출처 표기**: 답변 내용이 포함된 영상이나 블로그가 있다면 언급해 주세요.
+        5. **길이 제한**: 답변은 공백 포함 300자 이내로 간결하게 작성해 주세요.
         
         **법적 고지 (답변 하단에 필수 포함)**:
         "본 상담 내용은 참고용이며, 의학적 진단이나 처방을 대신할 수 없습니다."
         """
 
-    def _classify_query(self, query: str) -> str:
+    def classify_query(self, query: str) -> str:
         """Classifies the query into 'cancer', 'nerve', or 'general'."""
         try:
             response = self.client.models.generate_content(
@@ -101,7 +102,7 @@ class Generator:
     def generate_answer(self, query: str, context_docs: List[Dict], category: str = "auto") -> str:
         # 1. Auto-Routing
         if category == "auto":
-            category = self._classify_query(query)
+            category = self.classify_query(query)
             print(f"Auto-routed category: {category}")
 
         # 2. Handle General Queries (Consultation Manager)
