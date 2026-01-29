@@ -57,11 +57,29 @@ async def chat_endpoint(request: ChatRequest):
         answer = generator.generate_answer(query, context_docs, category)
         
         # Extract sources for API response (optional, as they are in text too)
-        sources = [doc['metadata']['source'] for doc in context_docs if 'metadata' in doc]
+        # Extract sources for API response (optional, as they are in text too)
+        sources = []
+        if context_docs:
+            for doc in context_docs:
+                metadata = doc.get('metadata', {})
+                
+                # Fix: Handle metadata if it's a JSON string
+                if isinstance(metadata, str):
+                    try:
+                        import json
+                        metadata = json.loads(metadata)
+                    except json.JSONDecodeError:
+                        print(f"Error parsing metadata JSON: {metadata}")
+                        metadata = {}
+
+                if metadata and isinstance(metadata, dict) and 'source' in metadata:
+                    sources.append(metadata['source'])
         
         return ChatResponse(answer=answer, sources=sources)
     
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Error processing request: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
