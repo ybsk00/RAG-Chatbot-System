@@ -1,9 +1,6 @@
 google-generativeai
 supabase
-aiohttp
 fastapi
 uvicorn
 python-dotenv
-langchain
-langchain-google-genai
-langchain-community
+pydantic

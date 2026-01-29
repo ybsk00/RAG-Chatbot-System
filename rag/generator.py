@@ -1,7 +1,5 @@
 from typing import List, Dict
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+import google.generativeai as genai
 from config.settings import GOOGLE_API_KEY, GENERATION_MODEL
 from rag.safety import SafetyGuard
 
@@ -10,13 +8,12 @@ class Generator:
         if not GOOGLE_API_KEY:
              raise ValueError("GOOGLE_API_KEY not set")
         
-        self.llm = ChatGoogleGenerativeAI(
-            model=GENERATION_MODEL,
-            google_api_key=GOOGLE_API_KEY,
-            temperature=0.3
-        )
+        genai.configure(api_key=GOOGLE_API_KEY)
+        self.model = genai.GenerativeModel(GENERATION_MODEL)
         
-        self.prompt = ChatPromptTemplate.from_template("""
+        # We handle the prompt construction in the method now, 
+        # but we can keep the template string here for reference or usage.
+        self.base_prompt_template = """
         당신은 서울온케어의원의 **AI 상담 전문의**입니다.
         현재 상담 주제는 **{category_name}**입니다.
         
@@ -36,9 +33,7 @@ class Generator:
         
         **법적 고지 (답변 하단에 필수 포함)**:
         "본 상담 내용은 참고용이며, 의학적 진단이나 처방을 대신할 수 없습니다."
-        """)
-        
-        self.chain = self.prompt | self.llm | StrOutputParser()
+        """
 
     def generate_answer(self, query: str, context_docs: List[Dict], category: str = "cancer") -> str:
         # Map category code to name
@@ -48,12 +43,8 @@ class Generator:
         }
         category_name = category_map.get(category, "일반 상담")
 
-        # 1. Safety Check: Diagnosis (Keyword check is still good as a first line of defense)
+        # 1. Safety Check: Diagnosis
         if SafetyGuard.check_medical_query(query):
-            # Even if we catch it here, we might want to let the LLM handle it gracefully with the persona,
-            # but returning a standard safe response is also fine. 
-            # Let's rely on the LLM's persona for a more natural "Doctor" refusal, 
-            # unless it's a very specific blocked keyword.
             pass 
 
         # 2. Safety Check: Relevance
@@ -63,15 +54,26 @@ class Generator:
         # 3. Format Context
         formatted_context = "\n\n".join([doc['content'] for doc in context_docs])
         
-        # 4. Generate
-        response = self.chain.invoke({
-            "context": formatted_context, 
-            "question": query,
-            "category_name": category_name
-        })
+        # 4. Construct Prompt
+        prompt = self.base_prompt_template.format(
+            category_name=category_name,
+            context=formatted_context,
+            question=query
+        )
         
-        # 5. Append Disclaimer (Double check, though prompt handles it, explicit append is safer)
-        # The prompt asks to include it, but let's ensure it's there.
+        # 5. Generate
+        try:
+            response_obj = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3
+                )
+            )
+            response = response_obj.text
+        except Exception as e:
+            return f"죄송합니다. 답변을 생성하는 도중 오류가 발생했습니다. (Error: {str(e)})")
+        
+        # 6. Append Disclaimer
         if "본 상담 내용은 참고용이며" not in response:
             final_response = SafetyGuard.append_disclaimer(response)
         else:
