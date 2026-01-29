@@ -99,8 +99,12 @@ async def chat_endpoint(request: ChatRequest):
                         print(f"Error parsing metadata JSON: {metadata}")
                         metadata = {}
 
-                if metadata and isinstance(metadata, dict) and 'source' in metadata:
-                    sources.append(metadata['source'])
+                try:
+                    if metadata and isinstance(metadata, dict) and 'source' in metadata:
+                        sources.append(metadata['source'])
+                except Exception as e:
+                    print(f"[Warning] Failed to extract source from doc {i}: {e}")
+                    print(f"  Metadata content: {metadata}")
         
         print(f"[Debug] Extracted sources: {sources}")
         return ChatResponse(answer=answer, sources=sources)
