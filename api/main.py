@@ -1,9 +1,15 @@
+import sys
+import os
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from rag.retriever import Retriever
 from rag.generator import Generator
 import uvicorn
-import os
 
 app = FastAPI(title="OnCare Clinic AI Chatbot")
 
@@ -26,6 +32,12 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: list = []
+
+@app.get("/")
+async def serve_frontend():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(current_dir, "index.html")
+    return FileResponse(file_path)
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):

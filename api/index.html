@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html class="light" lang="ko">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Seoul On Care - AI Assistant</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&amp;family=Noto+Sans:wght@400;500;700&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#f27f0d",
+                        "background-light": "#f8f7f5",
+                        "background-dark": "#221910",
+                    },
+                    fontFamily: {
+                        "display": ["Manrope", "Noto Sans", "sans-serif"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+    <style>
+        /* Custom Scrollbar for Chat History */
+        .overflow-y-auto::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .overflow-y-auto::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .overflow-y-auto::-webkit-scrollbar-thumb {
+            background-color: rgba(156, 115, 73, 0.3);
+            border-radius: 20px;
+        }
+    </style>
+</head>
+
+<body class="bg-background-light dark:bg-background-dark font-display h-screen w-full overflow-hidden relative">
+    <!-- Blurred Background Layer -->
+    <div class="absolute inset-0 z-0 w-full h-full bg-cover bg-center bg-no-repeat blur-[8px] scale-105 pointer-events-none opacity-60"
+        style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBMoqAOKxFDTBsOIa8Z-3CzagrWtHgBSA8cUBf98Lqb6Wm14xbu0jUCNQ4Pqxhcp28cI9xyRmcz0QHPnVa7gLyONpfcHuJCmlFDe-42qKnnk0l2cS88By5wXPCVdYuD9qVzSCvnnWElkQbAht9lhjXZryqgiZ6PNSTWXKZcH7Fh6MeIvdM4tFa3TC-dQkmPJ-_xx2xP1lfwJiG-AOhhMd-4KbH8288SrZeaz3cbYffW440WT9DZDAKnCERW7pJ_9a8woKUKVp9jrb5n");'>
+    </div>
+    <div class="absolute inset-0 z-0 bg-white/40 dark:bg-black/40"></div>
+
+    <!-- Main Modal Overlay -->
+    <div class="relative z-10 flex h-full w-full items-center justify-center p-4 sm:p-8">
+        <!-- Modal Container -->
+        <div
+            class="flex h-[90vh] w-full max-w-[1400px] flex-col overflow-hidden rounded-xl bg-[#fcfaf8] shadow-2xl dark:bg-[#1c140d] ring-1 ring-black/5">
+
+            <!-- Modal Header / Tabs -->
+            <div
+                class="flex items-center justify-between border-b border-[#e8dbce] bg-white dark:bg-[#221910] dark:border-[#33251a] px-6 py-0 shrink-0 h-16">
+                <div class="flex h-full gap-8">
+                    <button id="tab-cancer" onclick="switchTab('cancer')"
+                        class="relative flex h-full items-center justify-center border-b-[3px] border-b-primary text-[#1c140d] dark:text-white px-2 transition-colors hover:bg-gray-50 dark:hover:bg-[#2a2016]">
+                        <span class="text-sm font-bold leading-normal tracking-[0.015em]">암보조치료 (Cancer Support)</span>
+                    </button>
+                    <button id="tab-nerve" onclick="switchTab('nerve')"
+                        class="relative flex h-full items-center justify-center border-b-[3px] border-b-transparent text-[#9c7349] dark:text-[#bcaaa4] px-2 transition-colors hover:text-primary dark:hover:text-primary hover:bg-gray-50 dark:hover:bg-[#2a2016]">
+                        <span class="text-sm font-bold leading-normal tracking-[0.015em]">자율신경치료 (Autonomic
+                            Nerve)</span>
+                    </button>
+                </div>
+                <button
+                    class="flex h-8 w-8 items-center justify-center rounded-full text-[#9c7349] hover:bg-[#f4ede7] hover:text-[#1c140d] dark:text-[#bcaaa4] dark:hover:bg-[#33251a] dark:hover:text-white transition-colors">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
+            <!-- Content Split View -->
+            <div class="flex flex-1 overflow-hidden">
+
+                <!-- Left: Chat Interface (70%) -->
+                <div class="flex w-full md:w-[70%] flex-col bg-[#fcfaf8] dark:bg-[#1c140d]">
+                    <!-- Chat History -->
+                    <div class="flex-1 overflow-y-auto p-6 scroll-smooth" id="chatHistory">
+                        <div class="flex flex-col gap-6">
+                            <!-- Date Separator -->
+                            <div class="flex justify-center">
+                                <span
+                                    class="rounded-full bg-[#f4ede7] px-3 py-1 text-xs font-medium text-[#9c7349] dark:bg-[#33251a] dark:text-[#bcaaa4]">Today</span>
+                            </div>
+
+                            <!-- Headline/Welcome -->
+                            <h2
+                                class="text-[#1c140d] dark:text-white text-2xl font-bold leading-tight text-center px-4 pt-4">
+                                서울온케어의원 AI 상담실</h2>
+
+                            <!-- Initial AI Message -->
+                            <div class="flex items-end gap-3 px-2">
+                                <div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full w-10 shrink-0 border border-gray-200 dark:border-gray-700"
+                                    style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuC-g9ytL4eiKM2FOpV_1_gUslXLFwlL8Je31H90b5t7-F011XIcIvf9Uijc0yPLVIGVvT4OQEdAu4BCrRQesABH9wa7h2u0CPTt7sFxdlSfLtBg_A0UgSQr1S4N6E3RhBfkRc0pgC40dBrVvt6pISzSSRm_yxZWVShabl6W4zA6JJmC6MLgEJMdvXwLUruipva0wJhjYLcRqeEW4XMTGnDa4oHeJQPvPCPYxRStygYcBNsqnvfYgRhPja7z5O2UsUhYT9jfbPKLSLQM");'>
+                                </div>
+                                <div class="flex flex-1 flex-col gap-1 items-start">
+                                    <p
+                                        class="text-[#9c7349] dark:text-[#bcaaa4] text-[13px] font-normal leading-normal pl-1">
+                                        Dr. AI</p>
+                                    <div
+                                        class="rounded-2xl rounded-tl-none bg-white border border-[#e8dbce] px-5 py-3 text-[#1c140d] shadow-sm dark:bg-[#2a2016] dark:border-[#33251a] dark:text-white max-w-[85%]">
+                                        <p class="text-base font-normal leading-relaxed">
+                                            안녕하세요. 서울온케어의원 AI 상담전문의입니다.<br>
+                                            암 보조 치료나 자율신경 치료에 대해 궁금한 점이 있으신가요? 편안하게 말씀해 주세요.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Input Area -->
+                    <div class="shrink-0 p-6 pt-2 bg-[#fcfaf8] dark:bg-[#1c140d]">
+                        <div
+                            class="relative flex items-center gap-2 rounded-xl border border-[#e8dbce] bg-white p-2 shadow-sm focus-within:ring-2 focus-within:ring-primary/50 dark:border-[#33251a] dark:bg-[#221910]">
+                            <button
+                                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[#9c7349] hover:bg-[#f4ede7] dark:text-[#bcaaa4] dark:hover:bg-[#33251a]">
+                                <span class="material-symbols-outlined">add_circle</span>
+                            </button>
+                            <input id="userInput" onkeypress="handleKeyPress(event)"
+                                class="flex-1 border-none bg-transparent px-2 py-3 text-[#1c140d] placeholder-[#9c7349]/70 focus:ring-0 dark:text-white dark:placeholder-[#bcaaa4]/50 text-base font-medium"
+                                placeholder="궁금한 내용을 입력해주세요..." type="text" />
+                            <button id="sendBtn" onclick="sendMessage()"
+                                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-white hover:bg-primary/90 shadow-md transition-transform active:scale-95">
+                                <span class="material-symbols-outlined">send</span>
+                            </button>
+                        </div>
+                        <p class="mt-2 text-center text-xs text-[#9c7349] dark:text-[#bcaaa4]">
+                            본 상담 내용은 참고용이며, 정확한 진단과 처방은 반드시 내원하여 전문의와 상담하시기 바랍니다.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Right: Recommended Videos (30%) -->
+                <div
+                    class="hidden w-[30%] flex-col border-l border-[#e8dbce] bg-[#f8f7f5] dark:border-[#33251a] dark:bg-[#150f0b] md:flex">
+                    <div
+                        class="flex items-center justify-between border-b border-[#e8dbce] px-5 py-4 dark:border-[#33251a]">
+                        <h3 class="text-base font-bold text-[#1c140d] dark:text-white">관련 영상 추천 (Helpful Videos)</h3>
+                        <span class="material-symbols-outlined text-[#9c7349] dark:text-[#bcaaa4]">video_library</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto p-5" id="videoList">
+                        <!-- Default Empty State -->
+                        <div
+                            class="flex flex-col items-center justify-center h-full text-center text-[#9c7349] opacity-70">
+                            <span class="material-symbols-outlined text-4xl mb-2">smart_display</span>
+                            <p class="text-sm">상담 내용과 관련된 영상이<br>이곳에 표시됩니다.</p>
+                        </div>
+                    </div>
+
+                    <!-- Sidebar Footer -->
+                    <div class="border-t border-[#e8dbce] p-4 bg-white dark:bg-[#221910] dark:border-[#33251a]">
+                        <a href="https://www.youtube.com/@%EC%84%9C%EC%9A%B8%EC%98%A8%EC%BC%80%EC%96%B4%EC%9D%98%EC%9B%90"
+                            target="_blank"
+                            class="flex w-full items-center justify-center gap-2 rounded-lg border border-[#e8dbce] bg-transparent py-2 text-sm font-bold text-[#9c7349] transition-colors hover:bg-[#f4ede7] dark:border-[#33251a] dark:text-[#bcaaa4] dark:hover:bg-[#33251a]">
+                            <span class="material-symbols-outlined text-lg">open_in_new</span>
+                            유튜브 채널 바로가기
+                        </a>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentCategory = 'cancer'; // Default category
+
+        function switchTab(category) {
+            currentCategory = category;
+
+            // Update Tab Styles
+            const tabCancer = document.getElementById('tab-cancer');
+            const tabNerve = document.getElementById('tab-nerve');
+
+            if (category === 'cancer') {
+                tabCancer.classList.add('border-b-primary', 'text-[#1c140d]', 'dark:text-white');
+                tabCancer.classList.remove('border-b-transparent', 'text-[#9c7349]', 'dark:text-[#bcaaa4]');
+
+                tabNerve.classList.remove('border-b-primary', 'text-[#1c140d]', 'dark:text-white');
+                tabNerve.classList.add('border-b-transparent', 'text-[#9c7349]', 'dark:text-[#bcaaa4]');
+            } else {
+                tabNerve.classList.add('border-b-primary', 'text-[#1c140d]', 'dark:text-white');
+                tabNerve.classList.remove('border-b-transparent', 'text-[#9c7349]', 'dark:text-[#bcaaa4]');
+
+                tabCancer.classList.remove('border-b-primary', 'text-[#1c140d]', 'dark:text-white');
+                tabCancer.classList.add('border-b-transparent', 'text-[#9c7349]', 'dark:text-[#bcaaa4]');
+            }
+
+            // Optional: Clear chat or show system message indicating switch
+            addSystemMessage(`'${category === 'cancer' ? '암보조치료' : '자율신경치료'}' 상담 모드로 전환되었습니다.`);
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const btn = document.getElementById('sendBtn');
+            const query = input.value.trim();
+
+            if (!query) return;
+
+            // Add User Message
+            addUserMessage(query);
+            input.value = '';
+            input.disabled = true;
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query: query,
+                        category: currentCategory
+                    })
+                });
+
+                if (!response.ok) throw new Error('Network response was not ok');
+
+                const data = await response.json();
+                addBotMessage(data.answer);
+                updateVideoSidebar(data.sources);
+
+            } catch (error) {
+                addBotMessage("죄송합니다. 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+                console.error('Error:', error);
+            } finally {
+                input.disabled = false;
+                btn.disabled = false;
+                input.focus();
+            }
+        }
+
+        function addUserMessage(text) {
+            const history = document.getElementById('chatHistory').firstElementChild;
+            const msgHtml = `
+<div class="flex items-end gap-3 px-2 justify-end">
+    <div class="flex flex-1 flex-col gap-1 items-end">
+        <p class="text-[#9c7349] dark:text-[#bcaaa4] text-[13px] font-normal leading-normal pr-1">Patient</p>
+        <div class="rounded-2xl rounded-tr-none bg-primary px-5 py-3 text-white shadow-sm max-w-[85%]">
+            <p class="text-base font-normal leading-relaxed">${text}</p>
+        </div>
+    </div>
+    <div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full w-10 shrink-0 border border-gray-200 dark:border-gray-700" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBs0L1u_f2SGrNBHdZNos6WW6XU9MSW1Y0qHdcFlvWOEX8GLqMziKtLeLkZTr2CALNAFmr0qzFWV_RV5cPJZuyLdxwekgWPU3vE5xf9Mv5letlUQPTR4d8IIttANeMke0Hmn019gZt4jnnuMGuLTYyNo9L0r5mnafSZ2MiPM1ddhml4FSUhYGv4_MxjqZ8SK00T9JjeYeg8D1ss6pdz1Y_V-6pqfDCY7mu3KjdA9uqZm0RErYgB4Q7MoS2l-iJwFlRm04nyY15pSNTT");'></div>
+</div>
+`;
+            history.insertAdjacentHTML('beforeend', msgHtml);
+            scrollToBottom();
+        }
+
+        function addBotMessage(text) {
+            const history = document.getElementById('chatHistory').firstElementChild;
+            // Convert newlines to <br>
+            const formattedText = text.replace(/\n/g, '<br>');
+
+            const msgHtml = `
+<div class="flex items-end gap-3 px-2">
+    <div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full w-10 shrink-0 border border-gray-200 dark:border-gray-700" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuC-g9ytL4eiKM2FOpV_1_gUslXLFwlL8Je31H90b5t7-F011XIcIvf9Uijc0yPLVIGVvT4OQEdAu4BCrRQesABH9wa7h2u0CPTt7sFxdlSfLtBg_A0UgSQr1S4N6E3RhBfkRc0pgC40dBrVvt6pISzSSRm_yxZWVShabl6W4zA6JJmC6MLgEJMdvXwLUruipva0wJhjYLcRqeEW4XMTGnDa4oHeJQPvPCPYxRStygYcBNsqnvfYgRhPja7z5O2UsUhYT9jfbPKLSLQM");'></div>
+    <div class="flex flex-1 flex-col gap-1 items-start">
+        <p class="text-[#9c7349] dark:text-[#bcaaa4] text-[13px] font-normal leading-normal pl-1">Dr. AI</p>
+        <div class="rounded-2xl rounded-tl-none bg-white border border-[#e8dbce] px-5 py-3 text-[#1c140d] shadow-sm dark:bg-[#2a2016] dark:border-[#33251a] dark:text-white max-w-[85%]">
+            <p class="text-base font-normal leading-relaxed">${formattedText}</p>
+        </div>
+    </div>
+</div>
+`;
+            history.insertAdjacentHTML('beforeend', msgHtml);
+            scrollToBottom();
+        }
+
+        function addSystemMessage(text) {
+            const history = document.getElementById('chatHistory').firstElementChild;
+            const msgHtml = `
+<div class="flex justify-center my-4">
+    <span class="rounded-full bg-[#f4ede7] px-3 py-1 text-xs font-medium text-[#9c7349] dark:bg-[#33251a] dark:text-[#bcaaa4]">${text}</span>
+</div>
+`;
+            history.insertAdjacentHTML('beforeend', msgHtml);
+            scrollToBottom();
+        }
+
+        function updateVideoSidebar(sources) {
+            const videoList = document.getElementById('videoList');
+            const videos = [];
+
+            // Extract YouTube Videos
+            if (sources && sources.length > 0) {
+                sources.forEach(source => {
+                    if (source.includes('youtube.com') || source.includes('youtu.be')) {
+                        // Extract ID
+                        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+                        const match = source.match(regExp);
+                        if (match && match[2].length === 11) {
+                            videos.push({
+                                id: match[2],
+                                url: source,
+                                title: "관련 추천 영상", // We might not have title here unless we pass it from backend
+                                author: "서울온케어의원"
+                            });
+                        }
+                    }
+                });
+            }
+
+            // Remove duplicates
+            const uniqueVideos = Array.from(new Set(videos.map(v => v.id)))
+                .map(id => videos.find(v => v.id === id));
+
+            if (uniqueVideos.length === 0) {
+                videoList.innerHTML = `
+    <div class="flex flex-col items-center justify-center h-full text-center text-[#9c7349] opacity-70">
+        <span class="material-symbols-outlined text-4xl mb-2">smart_display</span>
+        <p class="text-sm">상담 내용과 관련된 영상이<br>이곳에 표시됩니다.</p>
+    </div>
+`;
+            } else {
+                videoList.innerHTML = uniqueVideos.map(video => `
+    <div class="mb-4">
+        <iframe width="100%" height="200" src="https://www.youtube.com/embed/${video.id}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen class="rounded-lg shadow-sm"></iframe>
+        <p class="mt-2 text-sm font-medium text-[#1c140d] dark:text-white line-clamp-2">${video.title}</p>
+    </div>
+`).join('');
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function scrollToBottom() {
+            const chatHistory = document.getElementById('chatHistory');
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+    </script>
+</body>
+
+</html>
