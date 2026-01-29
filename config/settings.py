@@ -16,7 +16,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 # Google Gemini Configuration
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 EMBEDDING_MODEL = "models/text-embedding-004"
-GENERATION_MODEL = "gemini-2.0-flash-exp" # Or gemini-1.5-flash as per availability
+GENERATION_MODEL = "gemini-2.5-flash" # Updated as per user request
 
 # RAG Configuration
 SIMILARITY_THRESHOLD = 0.6
