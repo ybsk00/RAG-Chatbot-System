@@ -92,6 +92,58 @@ class SupabaseManager:
             print(f"Error during search: {e}")
             return []
 
+    def keyword_search(self, query_text: str, k: int = 5, metadata_filter: Dict = None) -> List[Dict]:
+        """
+        Performs a simple keyword/text search using ilike.
+        Useful as a fallback or supplement to vector search.
+        """
+        try:
+            # Simple keyword extraction: split by space and take tokens > 2 chars
+            # This is a naive heuristic. In production, use an NLP extractor.
+            keywords = [word for word in query_text.split() if len(word) >= 2]
+            
+            if not keywords:
+                return []
+
+            # Construct a robust ILIKE query for ANY of the keywords
+            # Supabase-py 'or_' filter syntax: "content.ilike.%keyword1%,content.ilike.%keyword2%"
+            or_filter = ",".join([f"content.ilike.%{kw}%" for kw in keywords])
+            
+            query_builder = self.client.table("documents")\
+                .select("id, content, metadata")\
+                .or_(or_filter)
+            
+            # Apply metadata filter if provided
+            if metadata_filter:
+                query_builder = query_builder.match({"metadata": metadata_filter})
+
+            # Since we can't easily do partial JSON matching in simple query builder without more complex syntax,
+            # we'll assume exact match on the top-level keys if passed, or use the 'contains' operator on the jsonb column.
+            # However, supabase-py 'match' does exact match on columns.
+            # For JSONB column 'metadata', we should use .contains('metadata', filter_dict).
+            
+            if metadata_filter:
+                # Override the previous match attempt which might be wrong for JSONB
+                # Re-initializing purely to be safe isn't needed, just chaining correctly.
+                # Actually, let's use the 'contains' filter for JSONB.
+                query_builder = self.client.table("documents")\
+                    .select("id, content, metadata")\
+                    .or_(or_filter)\
+                    .contains("metadata", metadata_filter)
+
+            response = query_builder.limit(k).execute()
+                
+            # Add a dummy similarity score for compatibility
+            results = []
+            for item in response.data:
+                item['similarity'] = 1.0 # Treat keyword matches as high relevance
+                results.append(item)
+                
+            return results
+        except Exception as e:
+            print(f"Error during keyword search: {e}")
+            return []
+
     def create_table_sql(self):
         """Returns the SQL needed to set up the table in Supabase."""
         return """
