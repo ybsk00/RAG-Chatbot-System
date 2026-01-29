@@ -1,5 +1,8 @@
 google-generativeai
 supabase
+yt-dlp
+youtube-transcript-api
+beautifulsoup4
 aiohttp
 fastapi
 uvicorn
@@ -7,3 +10,5 @@ python-dotenv
 langchain
 langchain-google-genai
 langchain-community
+tiktoken
+rank_bm25
