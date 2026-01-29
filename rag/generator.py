@@ -1,5 +1,5 @@
 from typing import List, Dict
-import google.generativeai as genai
+from google import genai
 from config.settings import GOOGLE_API_KEY, GENERATION_MODEL
 from rag.safety import SafetyGuard
 
@@ -8,8 +8,8 @@ class Generator:
         if not GOOGLE_API_KEY:
              raise ValueError("GOOGLE_API_KEY not set")
         
-        genai.configure(api_key=GOOGLE_API_KEY)
-        self.model = genai.GenerativeModel(GENERATION_MODEL)
+        self.client = genai.Client(api_key=GOOGLE_API_KEY)
+        self.model = GENERATION_MODEL
         
         # We handle the prompt construction in the method now, 
         # but we can keep the template string here for reference or usage.
@@ -63,15 +63,16 @@ class Generator:
         
         # 5. Generate
         try:
-            response_obj = self.model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
+            response_obj = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
                     temperature=0.3
                 )
             )
             response = response_obj.text
         except Exception as e:
-            return f"죄송합니다. 답변을 생성하는 도중 오류가 발생했습니다. (Error: {str(e)})")
+            return f"죄송합니다. 답변을 생성하는 도중 오류가 발생했습니다. (Error: {str(e)})"
         
         # 6. Append Disclaimer
         if "본 상담 내용은 참고용이며" not in response:
