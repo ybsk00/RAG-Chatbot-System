@@ -1,6 +1,6 @@
 from typing import List, Dict
 from google import genai
-from config.settings import GOOGLE_API_KEY, GENERATION_MODEL
+from config.settings import GOOGLE_API_KEY, GENERATION_MODEL, MEDICAL_DISCLAIMER
 from rag.safety import SafetyGuard
 
 class Generator:
@@ -166,3 +166,77 @@ class Generator:
             final_response = response
         
         return final_response
+
+    def generate_answer_stream(self, query: str, context_docs: List[Dict], category: str = "auto"):
+        # 1. Auto-Routing
+        if category == "auto":
+            category = self.classify_query(query)
+            print(f"Auto-routed category: {category}")
+
+        # 2. Handle General Queries (Consultation Manager)
+        if category == "general":
+            try:
+                response = self.client.models.generate_content_stream(
+                    model=self.model,
+                    contents=self.general_prompt_template.format(question=query),
+                    config=genai.types.GenerateContentConfig(
+                        temperature=0.7
+                    )
+                )
+                for chunk in response:
+                    if chunk.text:
+                        yield chunk.text
+            except Exception as e:
+                yield f"죄송합니다. 답변을 생성하는 도중 오류가 발생했습니다. (Error: {str(e)})"
+            return
+
+        # 3. Handle Medical Queries (RAG Agent)
+        # Map category code to name
+        category_map = {
+            "cancer": "암 보조 치료 (Cancer Support Treatment)",
+            "nerve": "자율신경 치료 (Autonomic Nerve Treatment)"
+        }
+        category_name = category_map.get(category, "일반 상담")
+
+        # Safety Check: Diagnosis
+        if SafetyGuard.check_medical_query(query):
+            pass 
+
+        # Safety Check: Relevance
+        if not SafetyGuard.check_relevance(context_docs):
+            yield SafetyGuard.get_no_info_response()
+            return
+
+        # Format Context
+        formatted_context = "\n\n".join([doc['content'] for doc in context_docs])
+        
+        # Construct Prompt
+        prompt = self.medical_prompt_template.format(
+            category_name=category_name,
+            context=formatted_context,
+            question=query
+        )
+        
+        # Generate
+        try:
+            response_stream = self.client.models.generate_content_stream(
+                model=self.model,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    temperature=0.3
+                )
+            )
+            
+            full_response = ""
+            for chunk in response_stream:
+                if chunk.text:
+                    text_chunk = chunk.text
+                    full_response += text_chunk
+                    yield text_chunk
+            
+            # Append Disclaimer if not present
+            if "본 상담 내용은 참고용이며" not in full_response:
+                yield f"\n\n---\n**{MEDICAL_DISCLAIMER}**"
+
+        except Exception as e:
+            yield f"죄송합니다. 답변을 생성하는 도중 오류가 발생했습니다. (Error: {str(e)})"

@@ -64,7 +64,7 @@
             <div
                 class="flex items-center justify-between border-b border-[#e8dbce] bg-white dark:bg-[#221910] dark:border-[#33251a] px-6 py-0 shrink-0 h-16">
                 <div class="flex h-full gap-8 items-center">
-                   <span class="text-lg font-bold text-[#1c140d] dark:text-white">서울온케어의원 상담실</span>
+                    <span class="text-lg font-bold text-[#1c140d] dark:text-white">서울온케어의원 상담실</span>
                 </div>
                 <button
                     class="flex h-8 w-8 items-center justify-center rounded-full text-[#9c7349] hover:bg-[#f4ede7] hover:text-[#1c140d] dark:text-[#bcaaa4] dark:hover:bg-[#33251a] dark:hover:text-white transition-colors">
@@ -188,16 +188,68 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         query: query,
-                        query: query,
                         category: "auto"
                     })
                 });
 
                 if (!response.ok) throw new Error('Network response was not ok');
 
-                const data = await response.json();
-                addBotMessage(data.answer);
-                updateVideoSidebar(data.sources);
+                // Create Bot Message Placeholder
+                const botMsgId = addBotMessage("");
+                const botMsgContent = document.getElementById(botMsgId);
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullText = "";
+                let sourcesJson = null;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    fullText += chunk;
+
+                    // Check for sources delimiter
+                    if (fullText.includes("\n\n__SOURCES__\n")) {
+                        const parts = fullText.split("\n\n__SOURCES__\n");
+                        const answerText = parts[0];
+                        const sourcesText = parts[1];
+
+                        // Update message with answer part
+                        botMsgContent.innerHTML = answerText.replace(/\n/g, '<br>');
+
+                        // Parse sources if complete
+                        try {
+                            sourcesJson = JSON.parse(sourcesText);
+                            updateVideoSidebar(sourcesJson);
+                        } catch (e) {
+                            // Sources might be incomplete in this chunk, wait for more
+                            // But usually sources come at the very end.
+                            // If we are here, we might have partial JSON.
+                            // For simplicity, we assume sources come in one go or we handle it at the end.
+                            // Actually, let's just update text until we are sure.
+                        }
+                    } else {
+                        botMsgContent.innerHTML = fullText.replace(/\n/g, '<br>');
+                    }
+
+                    scrollToBottom();
+                }
+
+                // Final pass to ensure sources are processed
+                if (fullText.includes("\n\n__SOURCES__\n")) {
+                    const parts = fullText.split("\n\n__SOURCES__\n");
+                    const answerText = parts[0];
+                    const sourcesText = parts[1];
+                    botMsgContent.innerHTML = answerText.replace(/\n/g, '<br>');
+                    try {
+                        sourcesJson = JSON.parse(sourcesText);
+                        updateVideoSidebar(sourcesJson);
+                    } catch (e) {
+                        console.error("Error parsing sources:", e);
+                    }
+                }
 
             } catch (error) {
                 addBotMessage("죄송합니다. 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
@@ -230,6 +282,7 @@
             const history = document.getElementById('chatHistory').firstElementChild;
             // Convert newlines to <br>
             const formattedText = text.replace(/\n/g, '<br>');
+            const msgId = 'bot-msg-' + Date.now();
 
             const msgHtml = `
 <div class="flex items-end gap-3 px-2">
@@ -237,13 +290,14 @@
     <div class="flex flex-1 flex-col gap-1 items-start">
         <p class="text-[#9c7349] dark:text-[#bcaaa4] text-[13px] font-normal leading-normal pl-1">온케어봇</p>
         <div class="rounded-2xl rounded-tl-none bg-white border border-[#e8dbce] px-5 py-3 text-[#1c140d] shadow-sm dark:bg-[#2a2016] dark:border-[#33251a] dark:text-white max-w-[85%]">
-            <p class="text-base font-normal leading-relaxed">${formattedText}</p>
+            <p class="text-base font-normal leading-relaxed" id="${msgId}">${formattedText}</p>
         </div>
     </div>
 </div>
 `;
             history.insertAdjacentHTML('beforeend', msgHtml);
             scrollToBottom();
+            return msgId;
         }
 
         function addSystemMessage(text) {

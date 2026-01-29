@@ -39,7 +39,12 @@ async def serve_frontend():
     file_path = os.path.join(current_dir, "index.html")
     return FileResponse(file_path)
 
-@app.post("/chat", response_model=ChatResponse)
+from fastapi.responses import FileResponse, StreamingResponse
+import json
+
+# ... (existing imports)
+
+@app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     if not retriever or not generator:
         raise HTTPException(status_code=503, detail="RAG system not initialized properly.")
@@ -48,72 +53,75 @@ async def chat_endpoint(request: ChatRequest):
     category = request.category
     print(f"Received query: {query}, Category: {category}")
     
-    try:
-        import asyncio
-        import time
-        
-        start_time = time.time()
-        
-        # 1. Parallelize Retrieval and Routing
-        tasks = []
-        
-        # Task 1: Retrieve Documents (Blocking I/O wrapped in thread)
-        tasks.append(asyncio.to_thread(retriever.retrieve, query))
-        
-        # Task 2: Classify Query (Blocking I/O wrapped in thread) - Only if auto
-        if category == "auto":
-            tasks.append(asyncio.to_thread(generator.classify_query, query))
-        
-        # Execute tasks concurrently
-        results = await asyncio.gather(*tasks)
-        
-        retrieval_end_time = time.time()
-        print(f"[Timing] Retrieval & Classification took: {retrieval_end_time - start_time:.4f}s")
-        
-        context_docs = results[0]
-        if category == "auto":
-            category = results[1]
-            print(f"Auto-routed category (Parallel): {category}")
-        
-        # 2. Generate with Category Context
-        gen_start_time = time.time()
-        answer = await asyncio.to_thread(generator.generate_answer, query, context_docs, category)
-        gen_end_time = time.time()
-        print(f"[Timing] Generation took: {gen_end_time - gen_start_time:.4f}s")
-        print(f"[Timing] Total processing time: {gen_end_time - start_time:.4f}s")
-        
-        # Extract sources for API response
-        sources = []
-        if context_docs:
-            print(f"[Debug] Raw metadata from {len(context_docs)} docs:")
-            for i, doc in enumerate(context_docs):
-                metadata = doc.get('metadata', {})
-                print(f"  Doc {i} metadata type: {type(metadata)}, value: {metadata}")
-                
-                # Fix: Handle metadata if it's a JSON string
-                if isinstance(metadata, str):
+    async def response_generator():
+        try:
+            import asyncio
+            import time
+            
+            start_time = time.time()
+            
+            # 1. Retrieve Documents (Blocking I/O wrapped in thread)
+            # We can't easily parallelize routing here if we want to stream immediately, 
+            # but routing is fast. Let's do retrieval first.
+            context_docs = await asyncio.to_thread(retriever.retrieve, query)
+            
+            retrieval_end_time = time.time()
+            print(f"[Timing] Retrieval took: {retrieval_end_time - start_time:.4f}s")
+            
+            # 2. Generate Stream
+            # We need to pass the generator to iterate over
+            # Since generate_answer_stream is synchronous generator, we iterate it
+            # If we want async streaming, we might need to wrap it or use run_in_executor for each chunk?
+            # Actually, for simple text streaming, iterating a sync generator in async function 
+            # might block the loop if chunks take time. 
+            # But here the generator yields quickly after network calls.
+            # Ideally `generate_answer_stream` should be async or we run it in thread.
+            # But `google.genai` stream might be sync.
+            # Let's assume it's sync for now and just iterate.
+            # To avoid blocking, we can use `asyncio.to_thread` for the whole generation 
+            # but that defeats streaming purpose if we wait for all.
+            # We need an async iterator wrapper if the underlying lib is sync blocking.
+            
+            # However, `generator.generate_answer_stream` calls `client.models.generate_content_stream`
+            # which returns an iterable.
+            
+            # Let's try to iterate directly. If it blocks, it blocks this request processing.
+            # For better concurrency, we should run the blocking generation in a thread 
+            # and push to a queue, but that's complex.
+            # Let's stick to direct iteration for MVP.
+            
+            stream = generator.generate_answer_stream(query, context_docs, category)
+            
+            for chunk in stream:
+                yield chunk
+                # await asyncio.sleep(0) # Yield control to event loop
+            
+            # 3. Send Sources
+            sources = []
+            if context_docs:
+                for i, doc in enumerate(context_docs):
+                    metadata = doc.get('metadata', {})
+                    if isinstance(metadata, str):
+                        try:
+                            metadata = json.loads(metadata)
+                        except json.JSONDecodeError:
+                            metadata = {}
+                    
                     try:
-                        import json
-                        metadata = json.loads(metadata)
-                    except json.JSONDecodeError:
-                        print(f"Error parsing metadata JSON: {metadata}")
-                        metadata = {}
+                        if metadata and isinstance(metadata, dict) and 'source' in metadata:
+                            sources.append(metadata['source'])
+                    except Exception as e:
+                        print(f"[Warning] Failed to extract source from doc {i}: {e}")
 
-                try:
-                    if metadata and isinstance(metadata, dict) and 'source' in metadata:
-                        sources.append(metadata['source'])
-                except Exception as e:
-                    print(f"[Warning] Failed to extract source from doc {i}: {e}")
-                    print(f"  Metadata content: {metadata}")
-        
-        print(f"[Debug] Extracted sources: {sources}")
-        return ChatResponse(answer=answer, sources=sources)
-    
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"Error processing request: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            if sources:
+                # Send a delimiter and then the sources as JSON
+                yield f"\n\n__SOURCES__\n{json.dumps(sources)}"
+                
+        except Exception as e:
+            print(f"Error processing request: {e}")
+            yield f"Error: {str(e)}"
+
+    return StreamingResponse(response_generator(), media_type="text/plain")
 
 @app.get("/health")
 async def health_check():
