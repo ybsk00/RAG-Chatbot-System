@@ -83,7 +83,7 @@ async def chat_endpoint(request: ChatRequest):
             print(f"[Timing] Retrieval & Classification took: {retrieval_end_time - start_time:.4f}s")
             
             # 2. Generate Stream
-            stream = generator.generate_answer_stream(query, context_docs, final_category, history)
+            stream = generator.generate_answer_stream(query, context_docs, category=final_category, history=history)
             
             for chunk in stream:
                 yield chunk
