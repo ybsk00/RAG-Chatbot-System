@@ -50,6 +50,9 @@ async def chat_endpoint(request: ChatRequest):
     
     try:
         import asyncio
+        import time
+        
+        start_time = time.time()
         
         # 1. Parallelize Retrieval and Routing
         tasks = []
@@ -64,19 +67,28 @@ async def chat_endpoint(request: ChatRequest):
         # Execute tasks concurrently
         results = await asyncio.gather(*tasks)
         
+        retrieval_end_time = time.time()
+        print(f"[Timing] Retrieval & Classification took: {retrieval_end_time - start_time:.4f}s")
+        
         context_docs = results[0]
         if category == "auto":
             category = results[1]
             print(f"Auto-routed category (Parallel): {category}")
         
         # 2. Generate with Category Context
+        gen_start_time = time.time()
         answer = await asyncio.to_thread(generator.generate_answer, query, context_docs, category)
+        gen_end_time = time.time()
+        print(f"[Timing] Generation took: {gen_end_time - gen_start_time:.4f}s")
+        print(f"[Timing] Total processing time: {gen_end_time - start_time:.4f}s")
         
         # Extract sources for API response
         sources = []
         if context_docs:
-            for doc in context_docs:
+            print(f"[Debug] Raw metadata from {len(context_docs)} docs:")
+            for i, doc in enumerate(context_docs):
                 metadata = doc.get('metadata', {})
+                print(f"  Doc {i} metadata type: {type(metadata)}, value: {metadata}")
                 
                 # Fix: Handle metadata if it's a JSON string
                 if isinstance(metadata, str):
@@ -90,6 +102,7 @@ async def chat_endpoint(request: ChatRequest):
                 if metadata and isinstance(metadata, dict) and 'source' in metadata:
                     sources.append(metadata['source'])
         
+        print(f"[Debug] Extracted sources: {sources}")
         return ChatResponse(answer=answer, sources=sources)
     
     except Exception as e:
