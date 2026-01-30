@@ -122,14 +122,53 @@ class SupabaseManager:
         "어떻", "그런", "이런", "저런", "있나요", "없나요", "해주세요"
     }
 
+    # 한국어 조사/어미 접미사 (단어 끝에서 분리)
+    _PARTICLES = [
+        "에서는", "에서도", "에서의", "으로는", "으로도", "에서",
+        "에게는", "에게도", "에게", "한테는", "한테도", "한테",
+        "으로", "로는", "로도",
+        "이란", "이라", "이든", "이나", "이고", "이에",
+        "에는", "에도", "에의",
+        "은요", "는요", "이요",
+        "과는", "와는",
+        "까지", "부터", "마저", "조차", "밖에",
+        "은", "는", "이", "가", "을", "를", "의", "에", "로",
+        "와", "과", "도", "만", "요"
+    ]
+
+    @staticmethod
+    def _strip_particles(word: str) -> str:
+        """한국어 단어에서 조사/어미를 분리합니다."""
+        for p in SupabaseManager._PARTICLES:
+            if word.endswith(p) and len(word) > len(p) + 1:
+                return word[:-len(p)]
+        return word
+
     @staticmethod
     def _extract_keywords(query_text: str) -> List[str]:
-        """한국어 불용어를 제거한 키워드를 추출합니다."""
-        tokens = query_text.split()
-        keywords = [w for w in tokens if len(w) >= 2 and w not in SupabaseManager._STOPWORDS]
-        if not keywords and tokens:
-            keywords = sorted(tokens, key=len, reverse=True)[:3]
-        return keywords
+        """한국어 불용어 제거 + 조사 분리로 키워드를 추출합니다."""
+        tokens = query_text.replace("?", "").replace("!", "").replace(".", "").split()
+        keywords = []
+        for w in tokens:
+            if len(w) < 2 or w in SupabaseManager._STOPWORDS:
+                continue
+            stripped = SupabaseManager._strip_particles(w)
+            if len(stripped) >= 2 and stripped not in SupabaseManager._STOPWORDS:
+                keywords.append(stripped)
+            elif len(w) >= 2:
+                keywords.append(w)
+
+        # 중복 제거 (순서 유지)
+        seen = set()
+        unique = []
+        for kw in keywords:
+            if kw not in seen:
+                seen.add(kw)
+                unique.append(kw)
+
+        if not unique and tokens:
+            unique = sorted(tokens, key=len, reverse=True)[:3]
+        return unique
 
     def keyword_search(self, query_text: str, k: int = 5,
                        metadata_filter: Dict = None,
