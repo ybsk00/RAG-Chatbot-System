@@ -27,3 +27,6 @@ ffmpeg.exe
 # OS
 .DS_Store
 Thumbs.db
+
+# Design Reference (Private)
+chatbot_glassmorphism_edition/
