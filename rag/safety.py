@@ -1,5 +1,5 @@
 from typing import List, Dict
-from config.settings import MEDICAL_DISCLAIMER, NO_INFO_MESSAGE, SIMILARITY_THRESHOLD
+from config.settings import MEDICAL_DISCLAIMER, NO_INFO_MESSAGE, RELEVANCE_MIN_SIMILARITY
 
 
 class SafetyGuard:
@@ -13,13 +13,13 @@ class SafetyGuard:
     def check_relevance(retrieved_docs: List[Dict], min_similarity: float = None) -> bool:
         """
         검색된 문서의 관련성을 확인합니다.
-        Retriever가 이미 임계값 필터링과 재순위화를 수행했으므로,
-        여기서는 문서 존재 여부와 최소 유사도만 확인합니다.
+        벡터 검색 노이즈(~0.64-0.65)를 걸러내고,
+        키워드 매치(0.67+) 이상만 관련 있음으로 판단합니다.
         """
         if not retrieved_docs:
             return False
         if min_similarity is None:
-            min_similarity = SIMILARITY_THRESHOLD * 0.7  # Retriever 임계값보다 낮게 설정
+            min_similarity = RELEVANCE_MIN_SIMILARITY
         return any(doc.get('similarity', 0) >= min_similarity for doc in retrieved_docs)
 
     @staticmethod
