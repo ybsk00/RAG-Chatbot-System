@@ -170,6 +170,18 @@ class SupabaseManager:
             unique = sorted(tokens, key=len, reverse=True)[:3]
         return unique
 
+    @staticmethod
+    def _expand_compound_keywords(keywords: List[str]) -> List[str]:
+        """복합어 키워드를 3글자 서브워드로 확장합니다 (ilike 검색용)."""
+        expanded = list(keywords)
+        for kw in keywords:
+            if len(kw) >= 4:
+                for i in range(0, len(kw) - 2):
+                    sub = kw[i:i+3]
+                    if sub not in expanded and sub not in SupabaseManager._STOPWORDS:
+                        expanded.append(sub)
+        return expanded
+
     def keyword_search(self, query_text: str, k: int = 5,
                        metadata_filter: Dict = None,
                        table_name: str = None) -> List[Dict]:
@@ -182,7 +194,9 @@ class SupabaseManager:
             if not keywords:
                 return []
 
-            or_filter = ",".join([f"content.ilike.%{kw}%" for kw in keywords])
+            # 복합어 확장 키워드로 ilike 검색 (발견 범위 확대)
+            search_terms = self._expand_compound_keywords(keywords)
+            or_filter = ",".join([f"content.ilike.%{kw}%" for kw in search_terms])
 
             query_builder = self.client.table(table_name)\
                 .select("id, content, metadata")
@@ -192,13 +206,16 @@ class SupabaseManager:
             if metadata_filter:
                 query_builder = query_builder.contains("metadata", metadata_filter)
 
-            response = query_builder.limit(k * 2).execute()
+            response = query_builder.limit(k * 3).execute()
 
-            # 키워드 오버랩 비율로 점수 계산
+            # 키워드 오버랩 비율로 점수 계산 (공백 정규화로 복합어 매칭)
             results = []
             for item in response.data:
-                content_lower = item.get('content', '').lower()
-                matched = sum(1 for kw in keywords if kw.lower() in content_lower)
+                content_normalized = item.get('content', '').replace(' ', '').lower()
+                matched = sum(
+                    1 for kw in keywords
+                    if kw.lower().replace(' ', '') in content_normalized
+                )
                 score = round(matched / len(keywords), 2) if keywords else 0.0
                 if score >= 0.3:
                     item['similarity'] = score

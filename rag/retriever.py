@@ -40,15 +40,15 @@ class Retriever:
             print(f"[Cache HIT] {query[:30]}...")
             return cached
 
-        # 4개 검색을 병렬 실행
+        # 5개 검색을 병렬 실행 (벡터 검색은 후보 확대를 위해 k*2)
         futures = {
             # 1) documents 벡터 검색
             self._executor.submit(
-                self.db_manager.hybrid_search, query, k, SIMILARITY_THRESHOLD
+                self.db_manager.hybrid_search, query, k * 2, SIMILARITY_THRESHOLD
             ): "docs_vector",
             # 2) hospital_faqs 벡터 검색
             self._executor.submit(
-                self.db_manager.hybrid_search_faqs, query, k, SIMILARITY_THRESHOLD
+                self.db_manager.hybrid_search_faqs, query, k * 2, SIMILARITY_THRESHOLD
             ): "faqs_vector",
             # 3) documents 키워드 검색 (YouTube 우선)
             self._executor.submit(
@@ -58,6 +58,10 @@ class Retriever:
             self._executor.submit(
                 self.db_manager.keyword_search, query, k
             ): "general_kw",
+            # 5) hospital_faqs 키워드 검색
+            self._executor.submit(
+                self.db_manager.keyword_search, query, k, None, HOSPITAL_FAQS_TABLE
+            ): "faqs_kw",
         }
 
         search_results = {}
@@ -73,14 +77,15 @@ class Retriever:
         faqs_vector = search_results.get("faqs_vector", [])
         youtube_kw = search_results.get("youtube_kw", [])
         general_kw = search_results.get("general_kw", [])
+        faqs_kw = search_results.get("faqs_kw", [])
 
         print(f"[Retriever] docs_vector={len(docs_vector)}, faqs_vector={len(faqs_vector)}, "
-              f"yt_kw={len(youtube_kw)}, gen_kw={len(general_kw)}")
+              f"yt_kw={len(youtube_kw)}, gen_kw={len(general_kw)}, faqs_kw={len(faqs_kw)}")
 
         # 병합 + 중복 제거 (높은 유사도 보존)
         # hospital_faqs는 정제된 고품질 데이터이므로 우선 반영
         merged_docs = {}
-        for source_list in [faqs_vector, youtube_kw, docs_vector, general_kw]:
+        for source_list in [faqs_vector, faqs_kw, youtube_kw, docs_vector, general_kw]:
             for doc in source_list:
                 doc_id = doc.get('id') or hash(doc.get('content', ''))
                 if doc_id not in merged_docs:
