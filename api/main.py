@@ -96,52 +96,124 @@ async def chat_endpoint(request: ChatRequest):
                 await asyncio.sleep(0)
 
             # 3. Send Sources (조건부)
-            # - general 카테고리(인사, 일상): 유튜브 소스 없음
+            # - general 카테고리(인사, 일상): 소스 없음
             # - 폴백 답변: 소스 없음
-            # - RAG 의료 답변: 제목에 키워드 매칭되는 유튜브만
+            # - RAG 의료 답변: 키워드 매칭 + 카테고리 기반 유튜브 추천
             sources = []
             if context_docs and final_category != "general" and not is_fallback:
-                # 쿼리에서 핵심 키워드 추출
                 from database.supabase_client import SupabaseManager
+                from config.settings import HOSPITAL_FAQS_TABLE
+
+                def _parse_meta(raw):
+                    if isinstance(raw, str):
+                        try: return json.loads(raw)
+                        except: return {}
+                    return raw if isinstance(raw, dict) else {}
+
+                def _is_youtube(url):
+                    return 'youtube.com' in url or 'youtu.be' in url
+
+                seen_urls = set()
+                yt_sources = []
+                other_sources = []
+
+                # 동의어+복합어 확장 키워드
                 query_keywords = SupabaseManager._extract_keywords(query)
+                expanded_keywords = SupabaseManager._expand_synonyms(query_keywords)
+                search_keywords = SupabaseManager._expand_compound_keywords(expanded_keywords)
 
+                # (A) context_docs에서 소스 수집
                 for doc in context_docs:
-                    metadata = doc.get('metadata', {})
-                    if isinstance(metadata, str):
-                        try:
-                            metadata = json.loads(metadata)
-                        except json.JSONDecodeError:
-                            metadata = {}
-
-                    if not metadata or not isinstance(metadata, dict):
+                    metadata = _parse_meta(doc.get('metadata', {}))
+                    if not metadata:
+                        continue
+                    source_url = metadata.get('source', '')
+                    if source_url in seen_urls:
                         continue
 
-                    source_url = metadata.get('source', '')
-                    title = metadata.get('title', '')
+                    if _is_youtube(source_url):
+                        title = metadata.get('title', '')
+                        if title and search_keywords:
+                            title_norm = title.replace(' ', '').lower()
+                            if any(kw.lower().replace(' ', '') in title_norm for kw in search_keywords):
+                                seen_urls.add(source_url)
+                                yt_sources.append(metadata)
+                    elif source_url:
+                        seen_urls.add(source_url)
+                        other_sources.append(metadata)
 
-                    # 유튜브 소스: 제목에 쿼리 키워드가 포함된 경우만
-                    is_youtube = 'youtube.com' in source_url or 'youtu.be' in source_url
-                    if is_youtube and title and query_keywords:
-                        title_normalized = title.replace(' ', '').lower()
-                        has_keyword = any(
-                            kw.lower().replace(' ', '') in title_normalized
-                            for kw in query_keywords
-                        )
-                        if has_keyword:
-                            sources.append(metadata)
-                    elif not is_youtube and metadata.get('source'):
-                        # 블로그 등 비유튜브 소스는 그대로 포함
-                        sources.append(metadata)
+                MAX_YT = 5
 
-                # 유튜브 소스 중복 제거 (URL 기준)
-                seen_urls = set()
-                unique_sources = []
-                for s in sources:
-                    url = s.get('source', '')
-                    if url not in seen_urls:
-                        seen_urls.add(url)
-                        unique_sources.append(s)
-                sources = unique_sources
+                # (B) 카테고리 기반 유튜브 추천 (우선)
+                # 같은 카테고리의 유튜브 영상을 키워드 관련도 순으로 추천
+                if len(yt_sources) < MAX_YT:
+                    try:
+                        cat_resp = retriever.db_manager.client.table(HOSPITAL_FAQS_TABLE)\
+                            .select("metadata")\
+                            .contains("metadata", {"category": final_category})\
+                            .limit(100)\
+                            .execute()
+
+                        cat_yt = []
+                        cat_seen = set()
+                        for row in cat_resp.data:
+                            meta = _parse_meta(row.get('metadata', {}))
+                            if not meta:
+                                continue
+                            src_url = meta.get('source', '')
+                            if _is_youtube(src_url) and src_url not in seen_urls \
+                                    and src_url not in cat_seen and meta.get('title'):
+                                cat_seen.add(src_url)
+                                cat_yt.append(meta)
+
+                        # 키워드 관련도 순으로 정렬 (매칭 키워드 수 기준)
+                        if search_keywords:
+                            for item in cat_yt:
+                                title_norm = item.get('title', '').replace(' ', '').lower()
+                                item['_score'] = sum(
+                                    1 for kw in search_keywords
+                                    if kw.lower().replace(' ', '') in title_norm
+                                )
+                            cat_yt.sort(key=lambda x: x.get('_score', 0), reverse=True)
+
+                        need = MAX_YT - len(yt_sources)
+                        for meta in cat_yt[:need]:
+                            meta.pop('_score', None)
+                            seen_urls.add(meta.get('source', ''))
+                            yt_sources.append(meta)
+                    except Exception as cat_err:
+                        print(f"Category YouTube search error: {cat_err}")
+
+                # (C) 키워드 검색으로 유튜브 보충 (카테고리 결과가 부족할 때)
+                if len(yt_sources) < MAX_YT and search_keywords:
+                    try:
+                        for table in [None, HOSPITAL_FAQS_TABLE]:
+                            if len(yt_sources) >= MAX_YT:
+                                break
+                            yt_results = retriever.db_manager.keyword_search(
+                                query, k=15,
+                                metadata_filter={"type": "youtube"} if table is None else None,
+                                table_name=table
+                            )
+                            for doc in yt_results:
+                                if len(yt_sources) >= MAX_YT:
+                                    break
+                                meta = _parse_meta(doc.get('metadata', {}))
+                                if not meta:
+                                    continue
+                                src_url = meta.get('source', '')
+                                if not _is_youtube(src_url) or src_url in seen_urls:
+                                    continue
+                                title = meta.get('title', '')
+                                if title:
+                                    title_norm = title.replace(' ', '').lower()
+                                    if any(kw.lower().replace(' ', '') in title_norm for kw in search_keywords):
+                                        seen_urls.add(src_url)
+                                        yt_sources.append(meta)
+                    except Exception as yt_err:
+                        print(f"YouTube keyword search error: {yt_err}")
+
+                sources = other_sources + yt_sources
 
             if sources:
                 yield f"\n\n__SOURCES__\n{json.dumps(sources)}"
