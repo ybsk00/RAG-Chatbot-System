@@ -8,6 +8,7 @@ from config.settings import (
     DOCUMENTS_TABLE, HOSPITAL_FAQS_TABLE
 )
 from utils.embeddings import get_embedding, get_query_embedding
+from config.medical_synonyms import get_synonyms
 
 
 class SupabaseManager:
@@ -31,10 +32,28 @@ class SupabaseManager:
             print(f"Error inserting into {table_name}: {e}")
             raise e
 
+    def update_row(self, table_name: str, row_id: str, data: dict):
+        """특정 행의 필드를 업데이트합니다."""
+        try:
+            self.client.table(table_name).update(data).eq("id", row_id).execute()
+        except Exception as e:
+            print(f"Error updating row {row_id} in {table_name}: {e}")
+            raise e
+
+    @staticmethod
+    def _parse_question(content: str) -> str:
+        """'Q: ...\\nA: ...' 형식에서 질문만 추출합니다."""
+        if "Q:" in content and "A:" in content:
+            q_start = content.index("Q:") + 2
+            a_start = content.index("A:")
+            return content[q_start:a_start].strip()
+        return content.split("\n")[0].strip()
+
     def insert_documents(self, documents: List[Dict], table_name: str = None):
         """
         문서를 임베딩과 함께 Supabase에 삽입합니다.
         table_name: 'documents' (bigserial id) 또는 'hospital_faqs' (uuid id)
+        hospital_faqs의 경우 Q 부분만 임베딩하여 검색 정확도를 높입니다.
         """
         if table_name is None:
             table_name = DOCUMENTS_TABLE
@@ -49,7 +68,13 @@ class SupabaseManager:
             if not content:
                 continue
 
-            embedding = get_embedding(content)
+            # hospital_faqs: Q 부분만 임베딩 (쿼리↔질문 매칭 향상)
+            if table_name == HOSPITAL_FAQS_TABLE:
+                embed_text = self._parse_question(content)
+            else:
+                embed_text = content
+
+            embedding = get_embedding(embed_text)
             if not embedding:
                 print(f"Skipping document {i}: Embedding generation failed.")
                 continue
@@ -119,7 +144,8 @@ class SupabaseManager:
         "어떤", "무엇", "어떻게", "왜", "좀", "것", "수", "때", "거",
         "알려줘", "알려주세요", "뭐야", "뭔가요", "인가요", "건가요",
         "대해", "대해서", "관해", "관해서", "뭐예요", "무엇인가요",
-        "어떻", "그런", "이런", "저런", "있나요", "없나요", "해주세요"
+        "어떻", "그런", "이런", "저런", "있나요", "없나요", "해주세요",
+        "싶어", "싶은", "싶다", "싶어요", "싶습니다", "소개", "설명", "궁금", "정보"
     }
 
     # 한국어 조사/어미 접미사 (단어 끝에서 분리)
@@ -132,6 +158,7 @@ class SupabaseManager:
         "은요", "는요", "이요",
         "과는", "와는",
         "까지", "부터", "마저", "조차", "밖에",
+        "하고", "해서", "해요", "하면", "할까",
         "은", "는", "이", "가", "을", "를", "의", "에", "로",
         "와", "과", "도", "만", "요"
     ]
@@ -182,10 +209,20 @@ class SupabaseManager:
                         expanded.append(sub)
         return expanded
 
+    @staticmethod
+    def _expand_synonyms(keywords: List[str]) -> List[str]:
+        """의료 동의어 사전으로 키워드를 확장합니다."""
+        expanded = list(keywords)
+        for kw in keywords:
+            for syn in get_synonyms(kw):
+                if syn not in expanded:
+                    expanded.append(syn)
+        return expanded
+
     def keyword_search(self, query_text: str, k: int = 5,
                        metadata_filter: Dict = None,
                        table_name: str = None) -> List[Dict]:
-        """키워드 오버랩 비율 기반 점수를 적용한 키워드 검색."""
+        """키워드 오버랩 비율 기반 점수를 적용한 키워드 검색 (동의어 확장 포함)."""
         if table_name is None:
             table_name = DOCUMENTS_TABLE
 
@@ -194,8 +231,9 @@ class SupabaseManager:
             if not keywords:
                 return []
 
-            # 복합어 확장 키워드로 ilike 검색 (발견 범위 확대)
-            search_terms = self._expand_compound_keywords(keywords)
+            # 동의어 확장 → 복합어 확장 → ilike 검색 (발견 범위 확대)
+            synonyms_expanded = self._expand_synonyms(keywords)
+            search_terms = self._expand_compound_keywords(synonyms_expanded)
             or_filter = ",".join([f"content.ilike.%{kw}%" for kw in search_terms])
 
             query_builder = self.client.table(table_name)\
@@ -208,13 +246,16 @@ class SupabaseManager:
 
             response = query_builder.limit(k * 3).execute()
 
-            # 키워드 오버랩 비율로 점수 계산 (공백 정규화로 복합어 매칭)
+            # 키워드 오버랩 비율로 점수 계산 (동의어 매칭 포함)
             results = []
             for item in response.data:
                 content_normalized = item.get('content', '').replace(' ', '').lower()
                 matched = sum(
                     1 for kw in keywords
-                    if kw.lower().replace(' ', '') in content_normalized
+                    if any(
+                        term.lower().replace(' ', '') in content_normalized
+                        for term in [kw] + get_synonyms(kw)
+                    )
                 )
                 score = round(matched / len(keywords), 2) if keywords else 0.0
                 if score >= 0.3:
