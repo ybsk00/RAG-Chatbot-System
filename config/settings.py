@@ -43,3 +43,13 @@ RESULT_CACHE_TTL_SECONDS = 300
 # Safety
 MEDICAL_DISCLAIMER = "본 답변은 병원 콘텐츠를 기반으로 생성된 참고용 정보이며, 실제 진료를 대신할 수 없습니다."
 NO_INFO_MESSAGE = "죄송합니다. 해당 내용에 대한 병원 공식 자료를 찾을 수 없습니다. 정확한 상담은 병원으로 전화 부탁드립니다."
+
+# Fallback Configuration (RAG 결과 없을 때 일반 지식 폴백)
+ENABLE_MEDICAL_FALLBACK = True
+FALLBACK_TEMPERATURE = 0.1
+FALLBACK_MAX_CHARS = 300
+FALLBACK_PREFIX = "[일반 의학 정보 안내]\n\n"
+FALLBACK_DISCLAIMER = (
+    "위 내용은 서울온케어의원의 자료가 아닌 일반적인 의학 상식에 기반한 참고 정보입니다. "
+    "정확한 진단과 치료를 위해 서울온케어의원에 내원하시거나 전화로 상담받으시기 바랍니다."
+)

@@ -30,6 +30,22 @@ class SafetyGuard:
     def append_disclaimer(response_text: str) -> str:
         return f"{response_text}\n\n---\n**{MEDICAL_DISCLAIMER}**"
 
+    # LLM 출력물에서 차단해야 할 처방/진단 표현
+    OUTPUT_FORBIDDEN = [
+        "처방합니다", "처방드립니다", "진단합니다", "진단드립니다",
+        "복용하세요", "투여", "처방전", "mg", "정을 드세요",
+        "주사하세요", "수술하세요"
+    ]
+
+    @staticmethod
+    def check_output_safety(response: str) -> bool:
+        """LLM 출력에 처방/진단 표현이 없으면 True(안전)."""
+        normalized = response.replace(" ", "")
+        return not any(
+            kw.replace(" ", "") in normalized
+            for kw in SafetyGuard.OUTPUT_FORBIDDEN
+        )
+
     @staticmethod
     def check_medical_query(query: str) -> bool:
         """띄어쓰기 변형을 포함하여 진단/처방 요청을 감지합니다."""

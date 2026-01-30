@@ -1,11 +1,16 @@
 import json
+import logging
 from typing import List, Dict
 from google import genai
 from config.settings import (
     GOOGLE_API_KEY, GENERATION_MODEL, MEDICAL_DISCLAIMER,
-    GENERAL_TEMPERATURE, MEDICAL_TEMPERATURE, ROUTER_TEMPERATURE
+    GENERAL_TEMPERATURE, MEDICAL_TEMPERATURE, ROUTER_TEMPERATURE,
+    ENABLE_MEDICAL_FALLBACK, FALLBACK_TEMPERATURE, FALLBACK_MAX_CHARS,
+    FALLBACK_PREFIX, FALLBACK_DISCLAIMER
 )
 from rag.safety import SafetyGuard
+
+logger = logging.getLogger("rag.generator")
 
 # Gemini Client 싱글톤
 _genai_client = None
@@ -100,6 +105,26 @@ class Generator:
         "본 상담 내용은 참고용이며, 의학적 진단이나 처방을 대신할 수 없습니다."
         """
 
+        # 4. Medical Fallback Persona (RAG 결과 없을 때 일반 지식 기반)
+        self.fallback_prompt_template = """
+        당신은 서울온케어의원의 AI 상담 보조입니다.
+        환자의 질문에 대해 **일반적인 의학 상식** 수준에서만 간단히 안내합니다.
+
+        [Previous Conversation]:
+        {history}
+
+        [Question]:
+        {question}
+
+        **엄격한 답변 규칙 (반드시 준수)**:
+        1. **병원 자료 없음**: 이 질문에 대한 서울온케어의원의 공식 자료는 현재 준비되어 있지 않습니다. 이를 반드시 답변 첫머리에 밝히세요.
+        2. **일반 상식만**: 널리 알려진 의학 상식 수준으로만 답변하세요. 구체적인 치료법, 약물명, 용량은 절대 언급하지 마세요.
+        3. **짧고 보수적**: 답변은 공백 포함 {max_chars}자 이내로, 핵심만 간결하게 작성하세요.
+        4. **확정 금지**: "~입니다", "~해야 합니다" 같은 확정 표현 대신 "~일 수 있습니다", "~가 일반적입니다" 같은 유보적 표현을 사용하세요.
+        5. **진단/처방 절대 금지**: 특정 질병을 진단하거나 약물을 처방하는 내용은 절대 포함하지 마세요.
+        6. **내원 유도**: 답변 마지막에 반드시 "자세한 내용은 서울온케어의원에 내원하시어 전문의 상담을 받으시기 바랍니다."를 포함하세요.
+        """
+
     def _format_history(self, history: List[Dict]) -> str:
         if not history:
             return "없음"
@@ -186,6 +211,8 @@ class Generator:
 
         # 안전 체크: 관련 문서 존재 여부
         if not SafetyGuard.check_relevance(context_docs):
+            if ENABLE_MEDICAL_FALLBACK:
+                return self._generate_fallback(query, history_text)
             return SafetyGuard.get_no_info_response()
 
         formatted_context = self._format_context(context_docs)
@@ -252,8 +279,11 @@ class Generator:
             yield SafetyGuard.get_diagnosis_warning()
             return
 
-        # 안전 체크: 관련 문서 존재 여부
+        # 안전 체크: 관련 문서 존재 여부 → 폴백 분기
         if not SafetyGuard.check_relevance(context_docs):
+            if ENABLE_MEDICAL_FALLBACK:
+                yield from self._generate_fallback_stream(query, history_text)
+                return
             yield SafetyGuard.get_no_info_response()
             return
 
@@ -287,3 +317,75 @@ class Generator:
 
         except Exception as e:
             yield f"죄송합니다. 답변을 생성하는 도중 오류가 발생했습니다. (Error: {str(e)})"
+
+    # ──────────────────────────────────────────────
+    # 폴백: RAG 결과 없을 때 일반 의학 지식 기반 답변
+    # ──────────────────────────────────────────────
+
+    def _generate_fallback(self, query: str, history_text: str) -> str:
+        """RAG 결과 없을 때 일반 의학 지식 기반 보수적 답변 (비스트리밍)."""
+        logger.info(f"FALLBACK_TRIGGERED | query={query[:80]}")
+
+        prompt = self.fallback_prompt_template.format(
+            question=query,
+            history=history_text,
+            max_chars=FALLBACK_MAX_CHARS
+        )
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    temperature=FALLBACK_TEMPERATURE
+                )
+            )
+            answer = response.text
+
+            if not SafetyGuard.check_output_safety(answer):
+                logger.warning(f"FALLBACK_BLOCKED_OUTPUT | query={query[:80]}")
+                return SafetyGuard.get_no_info_response()
+
+            return f"{FALLBACK_PREFIX}{answer}\n\n---\n**{FALLBACK_DISCLAIMER}**"
+        except Exception as e:
+            logger.error(f"FALLBACK_ERROR | query={query[:80]} | error={e}")
+            return SafetyGuard.get_no_info_response()
+
+    def _generate_fallback_stream(self, query: str, history_text: str):
+        """RAG 결과 없을 때 일반 의학 지식 기반 스트리밍 답변."""
+        logger.info(f"FALLBACK_STREAM_TRIGGERED | query={query[:80]}")
+
+        prompt = self.fallback_prompt_template.format(
+            question=query,
+            history=history_text,
+            max_chars=FALLBACK_MAX_CHARS
+        )
+
+        try:
+            yield FALLBACK_PREFIX
+
+            response_stream = self.client.models.generate_content_stream(
+                model=self.model,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    temperature=FALLBACK_TEMPERATURE
+                )
+            )
+
+            full_parts = []
+            for chunk in response_stream:
+                if chunk.text:
+                    full_parts.append(chunk.text)
+                    yield chunk.text
+
+            full_response = "".join(full_parts)
+            if not SafetyGuard.check_output_safety(full_response):
+                logger.warning(f"FALLBACK_BLOCKED_OUTPUT | query={query[:80]}")
+                yield "\n\n(이 내용은 안전 검토를 통과하지 못했습니다. 병원에 직접 문의해 주세요.)"
+                return
+
+            yield f"\n\n---\n**{FALLBACK_DISCLAIMER}**"
+
+        except Exception as e:
+            logger.error(f"FALLBACK_STREAM_ERROR | query={query[:80]} | error={e}")
+            yield SafetyGuard.get_no_info_response()
