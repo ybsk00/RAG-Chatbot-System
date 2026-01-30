@@ -16,12 +16,29 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 # Google Gemini Configuration
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 EMBEDDING_MODEL = "models/text-embedding-004"
-GENERATION_MODEL = "gemini-2.5-flash" # Updated as per user request
+GENERATION_MODEL = "gemini-2.0-flash" # Updated as per user request
 
 # RAG Configuration
-SIMILARITY_THRESHOLD = 0.25
+SIMILARITY_THRESHOLD = 0.55
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
+KEYWORD_SIMILARITY_FLOOR = 0.3
+MAX_CONTEXT_CHARS = 6000
+MAX_CONTEXT_DOCS = 5
+
+# Table Names
+DOCUMENTS_TABLE = "documents"
+HOSPITAL_FAQS_TABLE = "hospital_faqs"
+
+# Temperature Configuration
+GENERAL_TEMPERATURE = 0.3
+MEDICAL_TEMPERATURE = 0.2
+ROUTER_TEMPERATURE = 0.0
+
+# Cache Configuration
+EMBEDDING_CACHE_SIZE = 256
+RESULT_CACHE_SIZE = 128
+RESULT_CACHE_TTL_SECONDS = 300
 
 # Safety
 MEDICAL_DISCLAIMER = "본 답변은 병원 콘텐츠를 기반으로 생성된 참고용 정보이며, 실제 진료를 대신할 수 없습니다."

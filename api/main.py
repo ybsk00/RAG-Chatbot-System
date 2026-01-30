@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from rag.retriever import Retriever
 from rag.generator import Generator
+from rag.safety import SafetyGuard
 import uvicorn
 
 app = FastAPI(title="OnCare Clinic AI Chatbot")
@@ -50,9 +51,11 @@ async def chat_endpoint(request: ChatRequest):
     if not retriever or not generator:
         raise HTTPException(status_code=503, detail="RAG system not initialized properly.")
     
-    query = request.query
+    query = request.query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
     category = request.category
-    history = request.history
+    history = SafetyGuard.validate_history(request.history)
     print(f"Received query: {query}, Category: {category}, History length: {len(history)}")
     
     async def response_generator():

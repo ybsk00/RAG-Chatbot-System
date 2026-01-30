@@ -1,59 +1,53 @@
 import os
+from functools import lru_cache
 from google import genai
-from config.settings import GOOGLE_API_KEY, EMBEDDING_MODEL
+from config.settings import GOOGLE_API_KEY, EMBEDDING_MODEL, EMBEDDING_CACHE_SIZE
 
-# Initialize client globally or within functions. Doing it globally is efficient if key is present.
 client = None
 if GOOGLE_API_KEY:
     client = genai.Client(api_key=GOOGLE_API_KEY)
 
-def get_embedding(text: str) -> list:
-    """
-    Generates embedding for a single string using Google GenAI.
-    Returns a list of floats.
-    """
+
+def get_embedding(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
+    """문서 임베딩 생성 (인제스트용, 캐시 불필요)."""
     if not client:
         raise ValueError("GOOGLE_API_KEY is not set.")
-    
-    # model name usually "models/text-embedding-004" or similar
-    # The config might have just "text-embedding-004", so we ensure "models/" prefix if needed
-    model_name = EMBEDDING_MODEL
-    # google-genai client typically expects just the model name, but let's keep the logic consistent
-    # Check if "models/" is required for the new client. Usually "text-embedding-004" works.
-    
+
     try:
         result = client.models.embed_content(
-            model=model_name,
+            model=EMBEDDING_MODEL,
             contents=text,
             config=genai.types.EmbedContentConfig(
-                task_type="RETRIEVAL_DOCUMENT" # Uppercase enum usually in new client
+                task_type=task_type
             )
         )
-        # The new client returns an object with 'embeddings'. 
-        # For a single content, it's usually result.embeddings[0].values
         return result.embeddings[0].values
     except Exception as e:
         print(f"Error generating embedding: {e}")
         return []
 
-def get_query_embedding(text: str) -> list:
-    """
-    Generates embedding for a query.
-    """
+
+@lru_cache(maxsize=EMBEDDING_CACHE_SIZE)
+def _get_query_embedding_cached(text: str) -> tuple:
+    """LRU 캐시 적용 내부 함수 (tuple 반환으로 hashable 보장)."""
     if not client:
         raise ValueError("GOOGLE_API_KEY is not set.")
-    
-    model_name = EMBEDDING_MODEL
 
     try:
         result = client.models.embed_content(
-            model=model_name,
+            model=EMBEDDING_MODEL,
             contents=text,
             config=genai.types.EmbedContentConfig(
                 task_type="RETRIEVAL_QUERY"
             )
         )
-        return result.embeddings[0].values
+        return tuple(result.embeddings[0].values)
     except Exception as e:
         print(f"Error generating query embedding: {e}")
-        return []
+        return ()
+
+
+def get_query_embedding(text: str) -> list:
+    """쿼리 임베딩 생성 (LRU 캐시 적용)."""
+    result = _get_query_embedding_cached(text)
+    return list(result) if result else []
