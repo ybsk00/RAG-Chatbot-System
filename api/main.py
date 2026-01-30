@@ -86,34 +86,64 @@ async def chat_endpoint(request: ChatRequest):
             print(f"[Timing] Retrieval & Classification took: {retrieval_end_time - start_time:.4f}s")
             
             # 2. Generate Stream
-            # Passing arguments positionally to match: generate_answer_stream(query, context_docs, category, history)
             stream = generator.generate_answer_stream(query, context_docs, final_category, history)
-            
+
+            is_fallback = False
             for chunk in stream:
+                if chunk.startswith("[일반 의학 정보 안내]"):
+                    is_fallback = True
                 yield chunk
-                await asyncio.sleep(0) # Yield control to event loop
-            
-            # 3. Send Sources
+                await asyncio.sleep(0)
+
+            # 3. Send Sources (조건부)
+            # - general 카테고리(인사, 일상): 유튜브 소스 없음
+            # - 폴백 답변: 소스 없음
+            # - RAG 의료 답변: 제목에 키워드 매칭되는 유튜브만
             sources = []
-            if context_docs:
-                for i, doc in enumerate(context_docs):
+            if context_docs and final_category != "general" and not is_fallback:
+                # 쿼리에서 핵심 키워드 추출
+                from database.supabase_client import SupabaseManager
+                query_keywords = SupabaseManager._extract_keywords(query)
+
+                for doc in context_docs:
                     metadata = doc.get('metadata', {})
                     if isinstance(metadata, str):
                         try:
                             metadata = json.loads(metadata)
                         except json.JSONDecodeError:
                             metadata = {}
-                    
-                    try:
-                        if metadata and isinstance(metadata, dict):
-                            # Append the whole metadata object or a subset
-                            # We need 'source' for the URL and 'title' for display
+
+                    if not metadata or not isinstance(metadata, dict):
+                        continue
+
+                    source_url = metadata.get('source', '')
+                    title = metadata.get('title', '')
+
+                    # 유튜브 소스: 제목에 쿼리 키워드가 포함된 경우만
+                    is_youtube = 'youtube.com' in source_url or 'youtu.be' in source_url
+                    if is_youtube and title and query_keywords:
+                        title_normalized = title.replace(' ', '').lower()
+                        has_keyword = any(
+                            kw.lower().replace(' ', '') in title_normalized
+                            for kw in query_keywords
+                        )
+                        if has_keyword:
                             sources.append(metadata)
-                    except Exception as e:
-                        print(f"[Warning] Failed to extract source from doc {i}: {e}")
+                    elif not is_youtube and metadata.get('source'):
+                        # 블로그 등 비유튜브 소스는 그대로 포함
+                        sources.append(metadata)
+
+                # 유튜브 소스 중복 제거 (URL 기준)
+                seen_urls = set()
+                unique_sources = []
+                for s in sources:
+                    url = s.get('source', '')
+                    if url not in seen_urls:
+                        seen_urls.add(url)
+                        unique_sources.append(s)
+                sources = unique_sources
 
             if sources:
-                # Send a delimiter and then the sources as JSON
                 yield f"\n\n__SOURCES__\n{json.dumps(sources)}"
                 
         except Exception as e:
