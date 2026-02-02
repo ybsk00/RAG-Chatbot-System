@@ -122,6 +122,20 @@ async def chat_endpoint(request: ChatRequest):
                 expanded_keywords = SupabaseManager._expand_synonyms(query_keywords)
                 search_keywords = SupabaseManager._expand_compound_keywords(expanded_keywords)
 
+                # 카테고리별 제외 키워드 (크로스 오염 방지)
+                CATEGORY_EXCLUDE_KEYWORDS = {
+                    "cancer": ["자율신경", "자율신경실조", "교감신경", "부교감신경", "자율신경장애"],
+                    "nerve": ["고주파", "온열치료", "온코써미아", "하이퍼써미아", "항암", "화학요법", "항암치료", "항암제"],
+                }
+                exclude_keywords = CATEGORY_EXCLUDE_KEYWORDS.get(final_category, [])
+
+                def _is_excluded_video(title, exclude_kws):
+                    """제목에 다른 카테고리 키워드가 포함되어 있으면 제외"""
+                    if not exclude_kws:
+                        return False
+                    title_norm = title.replace(' ', '').lower()
+                    return any(kw.lower().replace(' ', '') in title_norm for kw in exclude_kws)
+
                 # (A) context_docs에서 소스 수집
                 for doc in context_docs:
                     metadata = _parse_meta(doc.get('metadata', {}))
@@ -134,6 +148,9 @@ async def chat_endpoint(request: ChatRequest):
                     if _is_youtube(source_url):
                         title = metadata.get('title', '')
                         if title and search_keywords:
+                            # 다른 카테고리 영상 제외
+                            if _is_excluded_video(title, exclude_keywords):
+                                continue
                             title_norm = title.replace(' ', '').lower()
                             if any(kw.lower().replace(' ', '') in title_norm for kw in search_keywords):
                                 seen_urls.add(source_url)
@@ -146,6 +163,7 @@ async def chat_endpoint(request: ChatRequest):
 
                 # (B) 카테고리 기반 유튜브 추천 (우선)
                 # 같은 카테고리의 유튜브 영상을 키워드 관련도 순으로 추천
+                # 키워드 점수가 0인 영상(관련 없는 영상)은 제외
                 if len(yt_sources) < MAX_YT:
                     try:
                         cat_resp = retriever.db_manager.client.table(HOSPITAL_FAQS_TABLE)\
@@ -161,12 +179,17 @@ async def chat_endpoint(request: ChatRequest):
                             if not meta:
                                 continue
                             src_url = meta.get('source', '')
+                            title = meta.get('title', '')
                             if _is_youtube(src_url) and src_url not in seen_urls \
-                                    and src_url not in cat_seen and meta.get('title'):
+                                    and src_url not in cat_seen and title:
+                                # 다른 카테고리 영상 제외
+                                if _is_excluded_video(title, exclude_keywords):
+                                    continue
                                 cat_seen.add(src_url)
                                 cat_yt.append(meta)
 
                         # 키워드 관련도 순으로 정렬 (매칭 키워드 수 기준)
+                        # 점수가 0인 영상은 제외하여 크로스 오염 방지
                         if search_keywords:
                             for item in cat_yt:
                                 title_norm = item.get('title', '').replace(' ', '').lower()
@@ -174,6 +197,8 @@ async def chat_endpoint(request: ChatRequest):
                                     1 for kw in search_keywords
                                     if kw.lower().replace(' ', '') in title_norm
                                 )
+                            # 점수 > 0인 영상만 포함 (키워드 매칭 필수)
+                            cat_yt = [item for item in cat_yt if item.get('_score', 0) > 0]
                             cat_yt.sort(key=lambda x: x.get('_score', 0), reverse=True)
 
                         need = MAX_YT - len(yt_sources)
@@ -185,6 +210,7 @@ async def chat_endpoint(request: ChatRequest):
                         print(f"Category YouTube search error: {cat_err}")
 
                 # (C) 키워드 검색으로 유튜브 보충 (카테고리 결과가 부족할 때)
+                # 다른 카테고리 영상이 혼입되지 않도록 제외 키워드 적용
                 if len(yt_sources) < MAX_YT and search_keywords:
                     try:
                         for table in [None, HOSPITAL_FAQS_TABLE]:
@@ -206,6 +232,9 @@ async def chat_endpoint(request: ChatRequest):
                                     continue
                                 title = meta.get('title', '')
                                 if title:
+                                    # 다른 카테고리 영상 제외
+                                    if _is_excluded_video(title, exclude_keywords):
+                                        continue
                                     title_norm = title.replace(' ', '').lower()
                                     if any(kw.lower().replace(' ', '') in title_norm for kw in search_keywords):
                                         seen_urls.add(src_url)

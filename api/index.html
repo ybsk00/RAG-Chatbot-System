@@ -269,6 +269,29 @@
                 </div>
             </div>
 
+            <!-- Mobile Video Panel (모바일 전용) -->
+            <div id="mobileVideoPanel" class="md:hidden hidden flex-col z-20 border-t border-white/30 dark:border-gray-700/30 bg-white/40 dark:bg-black/30 backdrop-blur-md max-h-[45vh] overflow-hidden">
+                <div class="p-3 flex justify-between items-center bg-white/20 dark:bg-black/20 border-b border-white/20 dark:border-gray-700/20 cursor-pointer" onclick="toggleMobileVideos()">
+                    <h2 class="font-bold text-sm text-gray-800 dark:text-white flex items-center gap-2">
+                        <span class="material-icons-outlined text-primary text-lg">play_circle</span>
+                        관련 영상 추천
+                        <span id="mobileVideoCount" class="bg-primary/20 text-primary text-xs px-2 py-0.5 rounded-full font-bold"></span>
+                    </h2>
+                    <span class="material-icons-outlined text-gray-500 dark:text-gray-400 text-lg transition-transform duration-300" id="mobileVideoToggleIcon">expand_less</span>
+                </div>
+                <div id="mobileVideoList" class="overflow-x-auto overflow-y-hidden p-3 glass-scroll">
+                    <div class="flex gap-3" id="mobileVideoListInner">
+                    </div>
+                </div>
+                <div class="p-2 border-t border-white/20 dark:border-gray-700/20 bg-white/10 dark:bg-black/10">
+                    <a href="https://www.youtube.com/@%EC%84%9C%EC%9A%B8%EC%98%A8%EC%BC%80%EC%96%B4%EC%9D%98%EC%9B%90" target="_blank"
+                       class="w-full py-2 px-3 bg-white/50 dark:bg-gray-800/50 hover:bg-white/80 dark:hover:bg-gray-700/80 border border-white/40 dark:border-gray-600/50 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 flex items-center justify-center gap-1.5 transition-all shadow-sm">
+                        <span class="material-icons-outlined text-red-500 text-sm">video_library</span>
+                        유튜브 채널 바로가기
+                    </a>
+                </div>
+            </div>
+
             <!-- Input Area -->
             <div class="p-6 bg-white/60 dark:bg-black/40 backdrop-blur-xl border-t border-white/40 dark:border-gray-700/30 z-20">
                 <div class="relative flex items-center bg-white/70 dark:bg-gray-800/60 rounded-2xl border border-white/60 dark:border-gray-600/50 shadow-inner focus-within:ring-2 focus-within:ring-primary/70 focus-within:border-transparent transition-all duration-300 backdrop-blur-md">
@@ -291,7 +314,7 @@
             </div>
         </div>
 
-        <!-- Video Sidebar (Desktop Only) -->
+        <!-- Video Sidebar (Desktop) -->
         <div class="hidden md:flex flex-col w-96 border-l border-white/30 dark:border-gray-700/30 bg-white/20 dark:bg-black/20 backdrop-blur-md z-20">
             <div class="p-5 border-b border-white/30 dark:border-gray-700/30 flex justify-between items-center bg-white/10 dark:bg-black/10">
                 <h2 class="font-bold text-gray-800 dark:text-white flex items-center gap-2">
@@ -520,11 +543,8 @@
             if (el) el.remove();
         }
 
-        function updateVideoSidebar(sources) {
-            const videoList = document.getElementById('videoList');
+        function extractYouTubeVideos(sources) {
             const videos = [];
-
-            // Extract YouTube Videos
             if (sources && sources.length > 0) {
                 sources.forEach(item => {
                     let url = "";
@@ -540,7 +560,6 @@
                     }
 
                     if (url && (url.includes('youtube.com') || url.includes('youtu.be'))) {
-                        // Extract ID
                         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
                         const match = url.match(regExp);
                         if (match && match[2].length === 11) {
@@ -554,11 +573,15 @@
                     }
                 });
             }
-
-            // Remove duplicates
-            const uniqueVideos = Array.from(new Set(videos.map(v => v.id)))
+            return Array.from(new Set(videos.map(v => v.id)))
                 .map(id => videos.find(v => v.id === id));
+        }
 
+        function updateVideoSidebar(sources) {
+            const videoList = document.getElementById('videoList');
+            const uniqueVideos = extractYouTubeVideos(sources);
+
+            // Desktop sidebar
             if (uniqueVideos.length === 0) {
                 videoList.innerHTML = `
                     <div class="flex flex-col items-center justify-center h-full text-center text-gray-500 dark:text-gray-400 opacity-70">
@@ -583,6 +606,59 @@
                         </div>
                     </div>
                 `).join('');
+            }
+
+            // Mobile video panel
+            updateMobileVideoPanel(uniqueVideos);
+        }
+
+        let mobileVideosExpanded = true;
+
+        function updateMobileVideoPanel(uniqueVideos) {
+            const panel = document.getElementById('mobileVideoPanel');
+            const listInner = document.getElementById('mobileVideoListInner');
+            const countBadge = document.getElementById('mobileVideoCount');
+
+            if (uniqueVideos.length === 0) {
+                panel.classList.add('hidden');
+                panel.classList.remove('flex');
+                return;
+            }
+
+            // Show panel
+            panel.classList.remove('hidden');
+            panel.classList.add('flex');
+            countBadge.textContent = uniqueVideos.length;
+            mobileVideosExpanded = true;
+            document.getElementById('mobileVideoToggleIcon').style.transform = '';
+            document.getElementById('mobileVideoList').style.display = '';
+
+            // Render horizontal scrollable cards
+            listInner.innerHTML = uniqueVideos.map(video => `
+                <div class="flex-shrink-0 w-48 cursor-pointer group" onclick="window.open('https://www.youtube.com/watch?v=${video.id}', '_blank')">
+                    <div class="relative rounded-lg overflow-hidden shadow-md border border-white/30 dark:border-gray-700/40">
+                        <img src="${video.thumbnail}" alt="${video.title}" class="w-48 h-28 object-cover"/>
+                        <div class="absolute inset-0 bg-black/20 flex items-center justify-center">
+                            <div class="w-10 h-10 bg-red-600/90 rounded-full flex items-center justify-center text-white shadow-lg">
+                                <span class="material-icons-outlined text-lg">play_arrow</span>
+                            </div>
+                        </div>
+                    </div>
+                    <h3 class="font-bold text-xs text-gray-800 dark:text-gray-200 leading-snug mt-1.5 line-clamp-2">${video.title}</h3>
+                </div>
+            `).join('');
+        }
+
+        function toggleMobileVideos() {
+            const list = document.getElementById('mobileVideoList');
+            const icon = document.getElementById('mobileVideoToggleIcon');
+            mobileVideosExpanded = !mobileVideosExpanded;
+            if (mobileVideosExpanded) {
+                list.style.display = '';
+                icon.style.transform = '';
+            } else {
+                list.style.display = 'none';
+                icon.style.transform = 'rotate(180deg)';
             }
         }
 
