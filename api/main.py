@@ -43,8 +43,75 @@ async def serve_frontend():
 
 from fastapi.responses import FileResponse, StreamingResponse
 import json
+import re
 
-# ... (existing imports)
+# ── 내원 의사 감지 (하이브리드: 키워드 1차 → LLM 맥락 확인) ──
+VISIT_INTENT_STRONG = [
+    "예약", "방문", "내원", "가보고싶", "가볼게", "가고싶",
+    "진료받고싶", "치료받고싶", "상담받고싶", "진료예약",
+    "어떻게가", "언제가면", "찾아가", "찾아뵙", "방문하고",
+    "가보려고", "갈게요", "갈까요", "가볼까", "가봐야",
+    "한번가", "직접가", "내원하고", "접수",
+]
+VISIT_INTENT_WEAK = [
+    "어디", "위치", "주소", "오시는길", "길찾기", "지도",
+    "진료시간", "운영시간", "몇시", "영업시간",
+    "전화번호", "연락처", "전화",
+]
+VISIT_NEGATION = [
+    "어렵", "못가", "안가", "안갈", "못갈", "힘들", "나중에",
+    "다음에", "괜찮", "됐어", "아직", "생각해",
+]
+
+def _detect_visit_intent_keyword(query: str, history: list) -> str:
+    """키워드 기반 1차 감지. 'strong' / 'weak' / None 반환."""
+    q = query.replace(' ', '').lower()
+
+    # 부정 표현 체크
+    if any(neg in q for neg in VISIT_NEGATION):
+        return None
+
+    if any(kw in q for kw in VISIT_INTENT_STRONG):
+        return "strong"
+    if any(kw in q for kw in VISIT_INTENT_WEAK):
+        return "weak"
+
+    # 히스토리에서 최근 2턴 내 의료 상담 후 내원 표현 탐색
+    recent = history[-4:] if history else []
+    for turn in recent:
+        if turn.get("role") == "user":
+            t = turn.get("content", "").replace(' ', '').lower()
+            if any(kw in t for kw in VISIT_INTENT_STRONG):
+                return "strong"
+    return None
+
+def _detect_visit_intent_llm(query: str, history: list, gen: Generator) -> bool:
+    """LLM 맥락 확인 (weak 키워드 감지 시에만 호출)."""
+    hist_text = ""
+    for turn in (history[-4:] if history else []):
+        role = "환자" if turn.get("role") == "user" else "상담사"
+        hist_text += f"{role}: {turn.get('content','')}\n"
+
+    prompt = f"""다음 대화에서 환자(사용자)가 병원 방문이나 진료 예약 의사를 가지고 있는지 판단하세요.
+단순 정보 확인(궁금함)이 아니라 실제 방문/예약 의향이 있는 경우에만 YES를 출력하세요.
+
+[대화 기록]
+{hist_text}환자: {query}
+
+판단 (YES 또는 NO만 출력):"""
+
+    try:
+        resp = gen.client.models.generate_content(
+            model=gen.model,
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(temperature=0.0)
+        )
+        return "YES" in resp.text.strip().upper()
+    except Exception:
+        return False
+
+# Gemini import for LLM intent detection
+from google import genai
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
@@ -246,7 +313,27 @@ async def chat_endpoint(request: ChatRequest):
 
             if sources:
                 yield f"\n\n__SOURCES__\n{json.dumps(sources)}"
-                
+
+            # 4. 내원 의사 감지 → 예약 안내 카드 전송
+            try:
+                intent_level = _detect_visit_intent_keyword(query, history)
+                show_booking = False
+
+                if intent_level == "strong":
+                    show_booking = True
+                    print(f"[Booking] Strong intent detected: {query[:50]}")
+                elif intent_level == "weak":
+                    # weak 키워드 → LLM으로 맥락 확인
+                    show_booking = await asyncio.to_thread(
+                        _detect_visit_intent_llm, query, history, generator
+                    )
+                    print(f"[Booking] Weak intent, LLM confirmed: {show_booking}")
+
+                if show_booking:
+                    yield "\n\n__BOOKING__"
+            except Exception as booking_err:
+                print(f"[Booking] Detection error: {booking_err}")
+
         except Exception as e:
             print(f"Error processing request: {e}")
             yield f"Error: {str(e)}"
