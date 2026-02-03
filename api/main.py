@@ -230,18 +230,24 @@ async def chat_endpoint(request: ChatRequest):
 
                 # (B) 카테고리 기반 유튜브 추천 (우선)
                 # 같은 카테고리의 유튜브 영상을 키워드 관련도 순으로 추천
-                # 키워드 점수가 0인 영상(관련 없는 영상)은 제외
                 if len(yt_sources) < MAX_YT:
                     try:
                         cat_resp = retriever.db_manager.client.table(HOSPITAL_FAQS_TABLE)\
                             .select("metadata")\
                             .contains("metadata", {"category": final_category})\
+                            .limit(200)\
+                            .execute()
+
+                        # documents 테이블에서도 같은 카테고리 유튜브 영상 검색
+                        doc_cat_resp = retriever.db_manager.client.table("documents")\
+                            .select("metadata")\
+                            .contains("metadata", {"category": final_category, "type": "youtube"})\
                             .limit(100)\
                             .execute()
 
                         cat_yt = []
                         cat_seen = set()
-                        for row in cat_resp.data:
+                        for row in (cat_resp.data + doc_cat_resp.data):
                             meta = _parse_meta(row.get('metadata', {}))
                             if not meta:
                                 continue
@@ -256,7 +262,6 @@ async def chat_endpoint(request: ChatRequest):
                                 cat_yt.append(meta)
 
                         # 키워드 관련도 순으로 정렬 (매칭 키워드 수 기준)
-                        # 점수가 0인 영상은 제외하여 크로스 오염 방지
                         if search_keywords:
                             for item in cat_yt:
                                 title_norm = item.get('title', '').replace(' ', '').lower()
@@ -264,9 +269,11 @@ async def chat_endpoint(request: ChatRequest):
                                     1 for kw in search_keywords
                                     if kw.lower().replace(' ', '') in title_norm
                                 )
-                            # 점수 > 0인 영상만 포함 (키워드 매칭 필수)
-                            cat_yt = [item for item in cat_yt if item.get('_score', 0) > 0]
-                            cat_yt.sort(key=lambda x: x.get('_score', 0), reverse=True)
+                            # 점수 > 0인 영상 우선, 0점이라도 같은 카테고리면 후순위로 포함
+                            scored = [item for item in cat_yt if item.get('_score', 0) > 0]
+                            unscored = [item for item in cat_yt if item.get('_score', 0) == 0]
+                            scored.sort(key=lambda x: x.get('_score', 0), reverse=True)
+                            cat_yt = scored + unscored
 
                         need = MAX_YT - len(yt_sources)
                         for meta in cat_yt[:need]:

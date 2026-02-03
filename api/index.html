@@ -191,6 +191,24 @@
             50%      { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
         }
 
+        /* Mobile video toggle button */
+        .mobile-video-toggle {
+            background: linear-gradient(135deg, rgba(242,140,40,0.15) 0%, rgba(220,50,50,0.12) 100%);
+            border: 1.5px solid rgba(242,140,40,0.4);
+            animation: slideUp 0.4s ease-out;
+        }
+        .dark .mobile-video-toggle {
+            background: linear-gradient(135deg, rgba(242,140,40,0.2) 0%, rgba(220,50,50,0.15) 100%);
+            border: 1.5px solid rgba(242,140,40,0.35);
+        }
+        .mobile-video-toggle:active {
+            transform: scale(0.98);
+        }
+        @keyframes pulse-badge {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.15); }
+        }
+
         /* Typing indicator */
         .typing-indicator {
             display: flex;
@@ -293,19 +311,23 @@
 
             <!-- Mobile Video Panel (모바일 전용) -->
             <div id="mobileVideoPanel" class="md:hidden hidden flex-col z-20 border-t border-white/30 dark:border-gray-700/30 bg-white/40 dark:bg-black/30 backdrop-blur-md max-h-[45vh] overflow-hidden">
-                <div class="p-3 flex justify-between items-center bg-white/20 dark:bg-black/20 border-b border-white/20 dark:border-gray-700/20 cursor-pointer" onclick="toggleMobileVideos()">
-                    <h2 class="font-bold text-sm text-gray-800 dark:text-white flex items-center gap-2">
-                        <span class="material-icons-outlined text-primary text-lg">play_circle</span>
-                        관련 영상 추천
-                        <span id="mobileVideoCount" class="bg-primary/20 text-primary text-xs px-2 py-0.5 rounded-full font-bold"></span>
-                    </h2>
-                    <span class="material-icons-outlined text-gray-500 dark:text-gray-400 text-lg transition-transform duration-300" id="mobileVideoToggleIcon">expand_less</span>
+                <!-- 관련 영상 보기 토글 버튼 (강조 디자인) -->
+                <div class="p-3 cursor-pointer mobile-video-toggle" onclick="toggleMobileVideos()">
+                    <div class="flex justify-between items-center">
+                        <h2 class="font-bold text-sm text-gray-800 dark:text-white flex items-center gap-2">
+                            <span class="material-icons-outlined text-red-500 text-xl">smart_display</span>
+                            <span class="text-primary font-extrabold">관련 영상 보기</span>
+                            <span id="mobileVideoCount" class="bg-red-500 text-white text-xs px-2.5 py-0.5 rounded-full font-bold shadow-sm" style="animation: pulse-badge 2s infinite;"></span>
+                        </h2>
+                        <span class="material-icons-outlined text-primary text-xl transition-transform duration-300" id="mobileVideoToggleIcon">expand_more</span>
+                    </div>
                 </div>
-                <div id="mobileVideoList" class="overflow-x-auto overflow-y-hidden p-3 glass-scroll">
+                <!-- 영상 리스트 (기본 숨김) -->
+                <div id="mobileVideoList" class="overflow-x-auto overflow-y-hidden p-3 glass-scroll" style="display: none;">
                     <div class="flex gap-3" id="mobileVideoListInner">
                     </div>
                 </div>
-                <div class="p-2 border-t border-white/20 dark:border-gray-700/20 bg-white/10 dark:bg-black/10">
+                <div id="mobileVideoFooter" class="p-2 border-t border-white/20 dark:border-gray-700/20 bg-white/10 dark:bg-black/10" style="display: none;">
                     <a href="https://www.youtube.com/@%EC%84%9C%EC%9A%B8%EC%98%A8%EC%BC%80%EC%96%B4%EC%9D%98%EC%9B%90" target="_blank"
                        class="w-full py-2 px-3 bg-white/50 dark:bg-gray-800/50 hover:bg-white/80 dark:hover:bg-gray-700/80 border border-white/40 dark:border-gray-600/50 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-200 flex items-center justify-center gap-1.5 transition-all shadow-sm">
                         <span class="material-icons-outlined text-red-500 text-sm">video_library</span>
@@ -650,7 +672,7 @@
             updateMobileVideoPanel(uniqueVideos);
         }
 
-        let mobileVideosExpanded = true;
+        let mobileVideosExpanded = false;
 
         function updateMobileVideoPanel(uniqueVideos) {
             const panel = document.getElementById('mobileVideoPanel');
@@ -663,13 +685,17 @@
                 return;
             }
 
-            // Show panel
+            // Show panel (toggle bar only, video list hidden by default)
             panel.classList.remove('hidden');
             panel.classList.add('flex');
             countBadge.textContent = uniqueVideos.length;
-            mobileVideosExpanded = true;
+
+            // Default: collapsed (only toggle bar visible)
+            mobileVideosExpanded = false;
+            document.getElementById('mobileVideoToggleIcon').textContent = 'expand_more';
             document.getElementById('mobileVideoToggleIcon').style.transform = '';
-            document.getElementById('mobileVideoList').style.display = '';
+            document.getElementById('mobileVideoList').style.display = 'none';
+            document.getElementById('mobileVideoFooter').style.display = 'none';
 
             // Render horizontal scrollable cards
             listInner.innerHTML = uniqueVideos.map(video => `
@@ -689,14 +715,17 @@
 
         function toggleMobileVideos() {
             const list = document.getElementById('mobileVideoList');
+            const footer = document.getElementById('mobileVideoFooter');
             const icon = document.getElementById('mobileVideoToggleIcon');
             mobileVideosExpanded = !mobileVideosExpanded;
             if (mobileVideosExpanded) {
                 list.style.display = '';
-                icon.style.transform = '';
+                footer.style.display = '';
+                icon.textContent = 'expand_less';
             } else {
                 list.style.display = 'none';
-                icon.style.transform = 'rotate(180deg)';
+                footer.style.display = 'none';
+                icon.textContent = 'expand_more';
             }
         }
 

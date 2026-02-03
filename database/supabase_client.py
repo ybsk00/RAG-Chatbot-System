@@ -199,8 +199,18 @@ class SupabaseManager:
 
     @staticmethod
     def _expand_compound_keywords(keywords: List[str]) -> List[str]:
-        """복합어 키워드를 3글자 서브워드로 확장합니다 (ilike 검색용)."""
+        """복합어 키워드를 3글자 서브워드로 확장합니다 (ilike 검색용).
+        암 질환명(XX암)은 '암', '암치료', '암환자' 등 공통 키워드도 추가합니다."""
         expanded = list(keywords)
+
+        # 암 질환명 패턴 감지 → 공통 암 키워드 추가
+        cancer_base_terms = ["암", "암치료", "암환자", "항암", "암보조"]
+        for kw in keywords:
+            if kw.endswith("암") and len(kw) >= 2 and kw != "암":
+                for term in cancer_base_terms:
+                    if term not in expanded:
+                        expanded.append(term)
+
         for kw in keywords:
             if len(kw) >= 4:
                 for i in range(0, len(kw) - 2):
